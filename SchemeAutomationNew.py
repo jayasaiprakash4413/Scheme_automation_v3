@@ -147,6 +147,8 @@ def _determine_ts_label(scheme_min, scheme_max):
         return "6-12L"
     if min_int == 1200000 and max_int == 10000000:
         return ">12L"
+    if min_int == 30000 and max_int == 10000000:
+        return "ALL TS"
     return None
 
 
@@ -266,7 +268,7 @@ def _update_refname_ts(refname, scheme_min, scheme_max):
         return str(refname)
 
     updated = re.sub(
-        r'(<\s*3L|3\s*-\s*6L|6\s*-\s*12L|>\s*12L|<\s*6L|>\s*6L)',
+        r'(<\s*3L|3\s*-\s*6L|6\s*-\s*12L|>\s*12L|ALL\s*TS|<\s*6L|>\s*6L)',
         ts_label,
         str(refname),
         count=1,
@@ -670,17 +672,21 @@ def update_bs2_legal_name_pf_fc(text, pf_value, fc_duration_months, has_pf_in_re
 
     updated = re.sub(r'\bFC(?:\s*[-:]?\s*\d+D)?\b', 'FC', updated, flags=re.IGNORECASE)
 
+    rounded_fc_value = None
+    if pf_value is not None:
+        rounded_fc_value = pf_value.quantize(Decimal("0.1"), ROUND_HALF_UP).quantize(Decimal("0.00"))
+
     if not has_pf_in_refname:
         updated = re.sub(r'\bPF\s*[-:]?\s*[0-9]+(?:\.[0-9]+)?\s*%\s*', '', updated, flags=re.IGNORECASE)
         updated = re.sub(r'\s+', ' ', updated).strip()
-        if pf_value is not None:
-            fc_str = f"{pf_value.quantize(Decimal('0.00'), ROUND_HALF_UP)}%"
+        if rounded_fc_value is not None:
+            fc_str = f"{rounded_fc_value}%"
             if re.search(r'\bFC\b', updated, re.IGNORECASE):
                 updated = re.sub(r'\bFC\b', f'{fc_str} FC', updated, count=1, flags=re.IGNORECASE)
             else:
                 updated = f"{updated} {fc_str}".strip()
-    elif pf_value is not None:
-        pf_str = f"{pf_value.quantize(Decimal('0.00'), ROUND_HALF_UP)}%"
+    elif rounded_fc_value is not None:
+        pf_str = f"{rounded_fc_value}%"
         if re.search(r'PF\s*[-:]?\s*[0-9]+(?:\.[0-9]+)?\s*%', updated, re.IGNORECASE):
             updated = re.sub(
                 r'PF\s*[-:]?\s*[0-9]+(?:\.[0-9]+)?\s*%',
