@@ -42,15 +42,15 @@ REQUIRED_SCHEME_COLUMNS = [
     "description", "displayText", "chargeText", "refno", "tenure", "GroupTags",
     "applicableProcesses", "fulfillmentChannels", "customerLtv", "goldBenchmark",
     "productCategory", "OverallInterestCalculation", "NoOfBaseScheme", "bs1-legalName",
-    "bs1-Lender", "bs1-type", "bs1-benchmark", "bs1-ltv", "bs1-calculation",
+    "bs1-Lender", "bs1-type", "bs1-benchmark", "bs1-ltv", "bs1-tenure", "bs1-calculation",
     "bs1-NoOfCharges", "bs1-charge-1", "bs1-charge-2", "bs1-charge-3", "bs1-charge-4",
     "bs1-NoOfAddOns", "bs1-addon-1", "bs1-addon-2", "bs1-addon-3", "bs2-legalName",
-    "bs2-Lender", "bs2-type", "bs2-benchmark", "bs2-minThreshold", "bs2-MaxThreshold",
+    "bs2-Lender", "bs2-tenure", "bs2-type", "bs2-benchmark", "bs2-minThreshold", "bs2-MaxThreshold",
     "bs2-calculation", "bs2-NoOfCharges", "bs2-charge-1", "bs2-charge-2", "bs2-charge-3",
     "bs2-NoOfAddOns", "bs2-addon-1", "bs2-addon-2", "bs2-addon-3"
 ]
 
-SUMMARY_INPUT_COLUMNS = ["customerLtv", "SchemeMin", "SchemeMax", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure"]
+SUMMARY_INPUT_COLUMNS = ["customerLtv", "TS", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure"]
 
 CHECKER_COLUMNS = [
     "CHK PF Config Min", "CHK PF Config Max", "CHK PF Calc Min", "CHK PF Calc Max",
@@ -81,6 +81,7 @@ def _load_dummy_construct(filename):
 
 DUMMY_FLEXI_CONSTRUCT = _load_dummy_construct("Flexi_pf.json")
 DUMMY_FIXED_CONSTRUCT = _load_dummy_construct("fixed_pf.json")
+DUMMY_HIP_CONSTRUCT  = _load_dummy_construct("HIP_Test_Scheme.json")
 
 
 def _is_restructure_input(df):
@@ -150,6 +151,21 @@ def _determine_ts_label(scheme_min, scheme_max):
     if min_int == 30000 and max_int == 10000000:
         return "ALL TS"
     return None
+
+
+def _ts_label_to_min_max(ts_label):
+    """Given a TS tag string, return (scheme_min, scheme_max) integers."""
+    if ts_label is None:
+        return None, None
+    tag = str(ts_label).strip().upper().replace(" ", "")
+    mapping = {
+        "<3L":   (30000,   299999),
+        "3-6L":  (300000,  599999),
+        "6-12L": (600000,  1199999),
+        ">12L":  (1200000, 10000000),
+        "ALLTS": (30000,   10000000),
+    }
+    return mapping.get(tag, (None, None))
 
 
 def _ltv_code_from_input(ltv_value):
@@ -228,15 +244,11 @@ def _update_refname_pf(refname, pf_tag, pf_value):
     else:
         pf_text = f"PF- {min_pf.quantize(Decimal('0.00'), ROUND_HALF_UP)}%"
 
-    updated = re.sub(
-        r'PF\s*[-:]?\s*[0-9]+(?:\.[0-9]+)?\s*%\s*(?:[-–]\s*[0-9]+(?:\.[0-9]+)?\s*%)?',
-        pf_text,
-        updated,
-        count=1,
-        flags=re.IGNORECASE
-    )
+    pf_pattern = r'PF\s*[-:]?\s*[0-9]+(?:\.[0-9]+)?\s*%\s*(?:[-–]\s*[0-9]+(?:\.[0-9]+)?\s*%)?'
+    pf_already_present = bool(re.search(pf_pattern, updated, re.IGNORECASE))
+    updated = re.sub(pf_pattern, pf_text, updated, count=1, flags=re.IGNORECASE)
 
-    if updated == str(refname):
+    if not pf_already_present:
         updated = f"{str(refname).strip()} || {pf_text}".strip()
 
     if is_flexi:
@@ -262,8 +274,19 @@ def _update_refname_flow(refname, flow_tag):
     return re.sub(r'\s+', ' ', updated).strip()
 
 
-def _update_refname_ts(refname, scheme_min, scheme_max):
-    ts_label = _determine_ts_label(scheme_min, scheme_max)
+def _update_refname_ts(refname, ts_tag):
+    """Update the TS label in refname using the tag string directly."""
+    if ts_tag is None:
+        return str(refname)
+    tag = str(ts_tag).strip().upper().replace(" ", "")
+    label_map = {
+        "<3L":   "<3L",
+        "3-6L":  "3-6L",
+        "6-12L": "6-12L",
+        ">12L":  ">12L",
+        "ALLTS": "ALL TS",
+    }
+    ts_label = label_map.get(tag)
     if ts_label is None:
         return str(refname)
 
@@ -277,7 +300,9 @@ def _update_refname_ts(refname, scheme_min, scheme_max):
     return re.sub(r'\s+', ' ', updated).strip()
 
 
-def _pick_dummy_construct(refname, pf_tag=None):
+def _pick_dummy_construct(refname, pf_tag=None, product_type=None):
+    if product_type is not None and str(product_type).strip().lower() == "hip":
+        return deepcopy(DUMMY_HIP_CONSTRUCT)
     if pf_tag is not None:
         tag_text = str(pf_tag).strip().lower()
         if tag_text == "flexi":
@@ -305,7 +330,8 @@ def build_working_dataframe(input_df):
     for _, input_row in input_df.iterrows():
         refname_value = input_row.get("refName", "")
         pf_tag_value = _get_row_value(input_row, ["PF Tag", "pf_tag", "pfTag"])
-        template_row = _pick_dummy_construct(refname_value, pf_tag_value)
+        product_type_value = _get_row_value(input_row, ["Product Type", "product_type", "productType"])
+        template_row = _pick_dummy_construct(refname_value, pf_tag_value, product_type_value)
 
         for column, value in input_row.items():
             if pd.notna(value):
@@ -545,7 +571,9 @@ def secure_slab3(tenure):
     result = (compound - Decimal("1")) * m / t
     return (result * 100).quantize(Decimal("0.00"), ROUND_HALF_UP)
 
-def interest_engine(scheme, tenure, overall_ltv, monthly_opp):
+def interest_engine(scheme, tenure, overall_ltv, monthly_opp, secure_ltv_override=None):
+    # secure_ltv_override: when provided, bypasses the tenure-based secure_ltv lookup.
+    # Used for 90D jumping 6M where Royal LTV must be 66, not 67.
 
     if scheme == "Delight":
         secure_s1 = SECURE_S1_DELIGHT
@@ -555,7 +583,9 @@ def interest_engine(scheme, tenure, overall_ltv, monthly_opp):
         secure_s2 = SECURE_S2_ROYAL
 
     # secure_ltv = Decimal("67") if tenure != 12 else Decimal("60")
-    if tenure == 6:
+    if secure_ltv_override is not None:
+        secure_ltv = secure_ltv_override
+    elif tenure == 6:
         secure_ltv = Decimal("67")
     elif tenure == 7:
         secure_ltv = Decimal("66")
@@ -600,9 +630,12 @@ def update_charge_text(json_str, unsecure_pf, overall_pf):
     data["processingFee"] = f"{overall_pf.quantize(Decimal('0.00'), ROUND_HALF_UP)}%+GST"
     return json.dumps(data)
 
-def update_bs2_charge_2(json_str, charge_value, backcalc_min, backcalc_max, is_flexi):
+def update_bs2_charge_2(json_str, charge_value, backcalc_min, backcalc_max, is_flexi, applicable_processes=None):
     data = json.loads(json_str)
     data["chargeValue"] = float(charge_value.quantize(Decimal("0.00"), ROUND_HALF_UP))
+
+    if applicable_processes is not None:
+        data["applicableProcesses"] = applicable_processes
 
     if is_flexi:
         if "chargesMetaData" not in data or not isinstance(data["chargesMetaData"], dict):
@@ -734,7 +767,10 @@ def _find_slab_list(node):
     return None
 
 
-def update_interest_json(json_str, slabs, tenure_days):
+def update_interest_json(json_str, slabs, tenure_days, slab_days=None):
+    # slab_days: optional list of (fromDay, toDay) tuples, one per slab.
+    # When provided (90D jumping), each slab's fromDay and toDay are overwritten.
+    # When None (30D jumping / default), only the last slab's toDay is updated.
     try:
         data = json.loads(json_str)
     except Exception:
@@ -746,9 +782,13 @@ def update_interest_json(json_str, slabs, tenure_days):
         for i in range(max_count):
             value = Decimal(slabs[i]).quantize(Decimal("0.00"), ROUND_HALF_UP)
             slab_list[i]["interestRate"] = float(value)
+            if slab_days is not None and i < len(slab_days):
+                slab_list[i]["fromDay"] = slab_days[i][0]
+                slab_list[i]["toDay"] = slab_days[i][1]
 
-        if slab_list and isinstance(slab_list[-1], dict):
-            slab_list[-1]["toDay"] = tenure_days
+        if slab_days is None:
+            if slab_list and isinstance(slab_list[-1], dict):
+                slab_list[-1]["toDay"] = tenure_days
 
         return json.dumps(data)
 
@@ -771,28 +811,79 @@ with st.expander("Demo constructs available", expanded=False):
     c1.download_button("Download Flexi demo JSON", json.dumps(DUMMY_FLEXI_CONSTRUCT, indent=2), "Flexi_pf_demo.json", mime="application/json")
     c2.download_button("Download Fixed demo JSON", json.dumps(DUMMY_FIXED_CONSTRUCT, indent=2), "fixed_pf_demo.json", mime="application/json")
 
-if "input_df" not in st.session_state:
-    st.session_state.input_df = pd.DataFrame([
-        {"customerLtv": 77, "SchemeMin": 600000, "SchemeMax": 1199999, "slab1 ROI": 1.09, "PF Tag": "Nopf", "Flow": "RWL", "PF val": "0.50%", "Tenure": 6},
-        {"customerLtv": 77, "SchemeMin": 300000, "SchemeMax": 599999, "slab1 ROI": 1.09, "PF Tag": "Flexi", "Flow": "FWD", "PF val": "0.1%-0.70%", "Tenure": 12},
-    ], columns=SUMMARY_INPUT_COLUMNS)
+# ── Top-level flow selector: Jumping (30D/90D mix) or HIP ──────────────────
+FLOW_OPTIONS = ["Jumping (30D / 90D)", "HIP"]
+if "selected_flow" not in st.session_state:
+    st.session_state.selected_flow = FLOW_OPTIONS[0]
 
-st.write("Enter input rows below and click **Compute**.")
-edited_input_df = st.data_editor(
-    st.session_state.input_df,
-    use_container_width=True,
-    num_rows="dynamic",
-    key="summary_input_editor"
+selected_flow = st.selectbox(
+    "Flow",
+    options=FLOW_OPTIONS,
+    index=FLOW_OPTIONS.index(st.session_state.selected_flow),
+    key="flow_selector"
 )
+st.session_state.selected_flow = selected_flow
+is_hip_flow = selected_flow == "HIP"
+
+# Jumping flow columns include "Product Type" so each row can be 30D or 90D.
+# HIP flow columns omit it — HIP is injected automatically on Compute.
+JUMPING_COLUMNS = ["customerLtv", "TS", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure", "Product Type"]
+HIP_COLUMNS     = ["customerLtv", "TS", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure"]
+
+JUMPING_DEFAULTS = pd.DataFrame([
+    {"customerLtv": 77, "TS": "6-12L", "slab1 ROI": 1.09, "PF Tag": "Nopf",  "Flow": "RWL", "PF val": "0.50%",      "Tenure": 6,  "Product Type": "30D Jumping"},
+    {"customerLtv": 77, "TS": "3-6L",  "slab1 ROI": 1.09, "PF Tag": "Flexi", "Flow": "FWD", "PF val": "0.1%-0.70%", "Tenure": 12, "Product Type": "90D Jumping"},
+], columns=JUMPING_COLUMNS)
+
+HIP_DEFAULTS = pd.DataFrame([
+    {"customerLtv": 75, "TS": "<3L", "slab1 ROI": 1.19, "PF Tag": "Flexi", "Flow": "FWD", "PF val": "0.70%-1.00%", "Tenure": 7},
+], columns=HIP_COLUMNS)
+
+# Separate session-state keys so switching flows doesn't wipe entered data
+state_key = "input_df_HIP" if is_hip_flow else "input_df_Jumping"
+if state_key not in st.session_state:
+    st.session_state[state_key] = (HIP_DEFAULTS if is_hip_flow else JUMPING_DEFAULTS).copy()
+
+if is_hip_flow:
+    st.write("Enter HIP rows below and click **Compute**.")
+    edited_input_df = st.data_editor(
+        st.session_state[state_key],
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "PF Tag": st.column_config.SelectboxColumn(options=["Flexi", "Fixed", "Nopf"]),
+            "Flow":   st.column_config.SelectboxColumn(options=["FWD", "RWL"]),
+        },
+        key="editor_HIP"
+    )
+else:
+    st.write("Enter Jumping rows below — set **Product Type** per row to `30D Jumping` or `90D Jumping`.")
+    edited_input_df = st.data_editor(
+        st.session_state[state_key],
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "Product Type": st.column_config.SelectboxColumn(options=["30D Jumping", "90D Jumping"]),
+            "PF Tag":       st.column_config.SelectboxColumn(options=["Flexi", "Fixed", "Nopf"]),
+            "Flow":         st.column_config.SelectboxColumn(options=["FWD", "RWL"]),
+        },
+        key="editor_Jumping"
+    )
 
 if st.button("Compute"):
     if True:
 
-        st.session_state.input_df = edited_input_df.copy()
+        st.session_state[state_key] = edited_input_df.copy()
         cleaned_input_df = _drop_empty_rows(edited_input_df)
         if cleaned_input_df.empty:
             st.warning("Please enter at least one input row before computing.")
             st.stop()
+
+        cleaned_input_df = cleaned_input_df.copy()
+        # HIP flow: inject "HIP" as Product Type (column not shown in table)
+        # Jumping flow: Product Type already present per row — no injection needed
+        if is_hip_flow:
+            cleaned_input_df["Product Type"] = "HIP"
 
         df = build_working_dataframe(cleaned_input_df)
         for checker_column in CHECKER_COLUMNS:
@@ -815,19 +906,23 @@ if st.button("Compute"):
             configured_fc = _extract_charge_value(df.at[idx, "bs2-charge-3"]) if "bs2-charge-3" in df.columns else None
 
             input_ltv = _get_row_value(row, ["customerLtv", "customer_ltv", "ltv"])
-            input_scheme_min = _get_row_value(row, ["SchemeMin", "scheme_min"])
-            input_scheme_max = _get_row_value(row, ["SchemeMax", "scheme_max"])
+            input_ts_tag = _get_row_value(row, ["TS", "ts", "ticket_size", "ticketSize"])
+            input_scheme_min, input_scheme_max = _ts_label_to_min_max(input_ts_tag)
             input_roi = _get_row_value(row, ["slab1 ROI", "slab1ROI", "roi", "slab1_opp"])
             input_pf_tag = _get_row_value(row, ["PF Tag", "pf_tag", "pfTag"])
             input_flow = _get_row_value(row, ["Flow", "flow"])
             input_pf_val = _get_row_value(row, ["PF val", "PF Value", "pf_val", "pfValue"])
             input_tenure = _get_row_value(row, ["Tenure", "tenure"])
+            input_product_type = _get_row_value(row, ["Product Type", "product_type", "productType"])
+            pt_lower = str(input_product_type).strip().lower() if input_product_type is not None else ""
+            is_90d_jumping = pt_lower == "90d jumping"
+            is_hip = pt_lower == "hip"
 
             refname = _update_refname_ltv_code(refname, input_ltv)
             refname = _update_refname_opp(refname, input_roi)
             refname = _update_refname_pf(refname, input_pf_tag, input_pf_val)
             refname = _update_refname_flow(refname, input_flow)
-            refname = _update_refname_ts(refname, input_scheme_min, input_scheme_max)
+            refname = _update_refname_ts(refname, input_ts_tag)
 
             overall_ltv = _parse_decimal(input_ltv) or extract_ltv_from_code(refname)
             requested_tenure = _parse_int(input_tenure) or extract_tenure(refname)
@@ -853,15 +948,30 @@ if st.button("Compute"):
             df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
             df.at[idx, "customerLtv"] = float(overall_ltv)
 
-            scheme, final_tenure = decision_engine(
-                overall_ltv,
-                monthly_opp,
-                requested_tenure
-            )
+            if is_90d_jumping:
+                # 90D jumping always uses Royal, tenure stays as requested (no decision_engine override)
+                scheme = "Royal"
+                final_tenure = requested_tenure
+            else:
+                scheme, final_tenure = decision_engine(
+                    overall_ltv,
+                    monthly_opp,
+                    requested_tenure
+                )
+            # For 90D jumping 6M: Royal LTV is 66, not 67.
+            # (30D jumps 6M→7M via decision_engine so it already uses 66 naturally.)
+            # This also correctly propagates into PF and FC via the denominator.
+            secure_ltv_override_90d = Decimal("66") if (is_90d_jumping and final_tenure == 6) else None
 
             df.at[idx, "tenure"] = final_tenure
             if "Tenure" in df.columns:
                 df.at[idx, "Tenure"] = final_tenure
+            # HIP: secure tenure = final_tenure from decision engine; unsecure tenure is always 24M
+            if is_hip:
+                if "bs1-tenure" in df.columns:
+                    df.at[idx, "bs1-tenure"] = final_tenure
+                if "bs2-tenure" in df.columns:
+                    df.at[idx, "bs2-tenure"] = 24
             refname = update_refname_tenure(refname, final_tenure)
             refname = re.sub(r'(%)(\d{1,2}M\b)', r'\1 \2', refname)
             df.at[idx, "refName"] = refname
@@ -889,7 +999,8 @@ if st.button("Compute"):
                 scheme,
                 final_tenure,
                 overall_ltv,
-                monthly_opp
+                monthly_opp,
+                secure_ltv_override=secure_ltv_override_90d
             )
 
             if "bs1-ltv" in df.columns:
@@ -897,29 +1008,43 @@ if st.button("Compute"):
 
             tenure_days = get_tenure_days(final_tenure)
 
+            # For 90D jumping: override slab day boundaries (0-90, 91-120, 121-tenure*30)
+            # For 30D jumping / all others: slab_days=None preserves existing behaviour
+            if is_90d_jumping:
+                last_day = int(final_tenure) * 30
+                slab_days_override = [(0, 90), (91, 120), (121, last_day)]
+            else:
+                slab_days_override = None
+
             df.at[idx, "OverallInterestCalculation"] = update_interest_json(
                 df.at[idx, "OverallInterestCalculation"],
                 result["overall_slabs"],
-                tenure_days
+                tenure_days,
+                slab_days=slab_days_override
             )
 
             df.at[idx, "bs1-addon-1"] = update_interest_json(
                 df.at[idx, "bs1-addon-1"],
                 result["secure_slabs"],
-                tenure_days
+                tenure_days,
+                slab_days=slab_days_override
             )
 
+            # HIP: unsecure addon last slab toDay is 24M * 30 = 720 days (fixed unsecure tenure)
+            bs2_addon1_tenure_days = 720 if is_hip else tenure_days
             df.at[idx, "bs2-addon-1"] = update_interest_json(
                 df.at[idx, "bs2-addon-1"],
                 result["unsecure_slabs"],
-                tenure_days
+                bs2_addon1_tenure_days,
+                slab_days=slab_days_override
             )
 
             if "bs2-calculation" in df.columns:
                 df.at[idx, "bs2-calculation"] = update_interest_json(
                     df.at[idx, "bs2-calculation"],
                     result["unsecure_slabs"],
-                    tenure_days
+                    tenure_days,
+                    slab_days=slab_days_override
                 )
 
             secure_ltv = result["secure_ltv"]
@@ -937,6 +1062,13 @@ if st.button("Compute"):
             refname_lower = str(df.at[idx, "refName"]).lower()
             is_flexi = flow_pf_tag == "flexi" or any(token in refname_lower for token in ["flexipf", "flexi pf", "flexi-pf"])
             charge_pf_value = (max_unsecure_pf if is_flexi else min_unsecure_pf) if not is_nopf else None
+
+            # Compute applicable_processes here so it is available for both
+            # the PF charge (bs2-charge-2) and the FC charge (bs2-charge-3)
+            if "applicableProcesses" in df.columns:
+                applicable_processes = [p.strip() for p in str(df.at[idx, "applicableProcesses"]).split(",") if p.strip()]
+            else:
+                applicable_processes = ["fresh-loan", "takeover-loan"] if (str(input_flow).strip().upper() == "FWD") else ["renewal"] if (str(input_flow).strip().upper() == "RWL") else ["fresh-loan", "release"]
 
             if is_nopf:
                 if "chargeText" in df.columns:
@@ -956,13 +1088,9 @@ if st.button("Compute"):
                         charge_pf_value,
                         min_unsecure_pf,
                         max_unsecure_pf,
-                        is_flexi
+                        is_flexi,
+                        applicable_processes=applicable_processes
                     )
-
-            if "applicableProcesses" in df.columns:
-                applicable_processes = [p.strip() for p in str(df.at[idx, "applicableProcesses"]).split(",") if p.strip()]
-            else:
-                applicable_processes = ["fresh-loan", "takeover-loan"] if (str(input_flow).strip().upper() == "FWD") else ["renewal"] if (str(input_flow).strip().upper() == "RWL") else ["fresh-loan", "release"]
 
             foreclosure_overall = Decimal("1.00")
             foreclosure_duration = 3 if final_tenure in (6, 7, 12) else 2
@@ -992,19 +1120,39 @@ if st.button("Compute"):
                     df.at[idx, "bs2-NoOfCharges"] = 3
 
             if "bs2-legalName" in df.columns:
-                encoding = "th7.si5" if final_tenure == 12 else "f8"
-                updated_legal_name = update_bs2_legal_name(
-                    df.at[idx, "bs2-legalName"],
-                    final_tenure,
-                    encoding
-                )
-                has_pf_in_name = not is_nopf
-                df.at[idx, "bs2-legalName"] = update_bs2_legal_name_pf_fc(
-                    updated_legal_name,
-                    foreclosure_unsecure,
-                    foreclosure_duration,
-                    has_pf_in_name
-                )
+                if is_hip:
+                    # HIP legalname format: "Rupeek Loan f8 24M PF HIP X.XX% FC 90D"
+                    # 24M is fixed (unsecure tenure); f8 encoding is always f8 for HIP.
+                    # Replace the % value inside "PF HIP X.XX%" with foreclosure_unsecure.
+                    # Do NOT run the standard update_bs2_legal_name_pf_fc which would add a second PF.
+                    hip_ln = str(df.at[idx, "bs2-legalName"])
+                    fc_str_hip = str(((foreclosure_unsecure * 2).quantize(Decimal("1"), ROUND_HALF_UP) / 2).quantize(Decimal("0.00")))
+                    hip_ln = re.sub(
+                        r'(PF\s+HIP\s+)[0-9]+(?:\.[0-9]+)?(%)',
+                        rf'\g<1>{fc_str_hip}\g<2>',
+                        hip_ln, count=1, flags=re.IGNORECASE
+                    )
+                    # Normalise FC duration marker
+                    hip_ln = re.sub(r'\bFC(?:\s*[-:]?\s*\d+D)?\b', 'FC', hip_ln, flags=re.IGNORECASE)
+                    if int(foreclosure_duration) == 3:
+                        hip_ln = re.sub(r'\bFC\b', 'FC 90D', hip_ln, count=1, flags=re.IGNORECASE)
+                    elif int(foreclosure_duration) == 4:
+                        hip_ln = re.sub(r'\bFC\b', 'FC 120D', hip_ln, count=1, flags=re.IGNORECASE)
+                    df.at[idx, "bs2-legalName"] = re.sub(r'\s+', ' ', hip_ln).strip()
+                else:
+                    encoding = "th7.si5" if final_tenure == 12 else "f8"
+                    updated_legal_name = update_bs2_legal_name(
+                        df.at[idx, "bs2-legalName"],
+                        final_tenure,
+                        encoding
+                    )
+                    has_pf_in_name = not is_nopf
+                    df.at[idx, "bs2-legalName"] = update_bs2_legal_name_pf_fc(
+                        updated_legal_name,
+                        foreclosure_unsecure,
+                        foreclosure_duration,
+                        has_pf_in_name
+                    )
 
             # Re-read configured values after all updates so checker compares final configured vs calculated outputs.
             configured_overall_ir_now = _extract_interest_rates(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else []
