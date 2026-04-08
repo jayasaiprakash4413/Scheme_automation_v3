@@ -886,7 +886,7 @@ if st.button("Compute"):
             cleaned_input_df["Product Type"] = "HIP"
 
         df = build_working_dataframe(cleaned_input_df)
-        numeric_cols = [
+numeric_cols = [
             "SchemeMin", "SchemeMax",
             "tenure", "Tenure",
             "bs1-tenure", "bs2-tenure"
