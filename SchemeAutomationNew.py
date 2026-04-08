@@ -944,8 +944,10 @@ if st.button("Compute"):
             if not all([overall_ltv, requested_tenure, monthly_opp]) or (not is_nopf and overall_pf is None):
                 continue
 
-            df.at[idx, "SchemeMin"] = _parse_int(input_scheme_min) or df.at[idx, "SchemeMin"]
-            df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
+            # df.at[idx, "SchemeMin"] = _parse_int(input_scheme_min) or df.at[idx, "SchemeMin"]
+            # df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
+            df["SchemeMin"] = pd.to_numeric(df["SchemeMin"], errors="coerce")
+            df["SchemeMax"] = pd.to_numeric(df["SchemeMax"], errors="coerce")
             df.at[idx, "customerLtv"] = float(overall_ltv)
 
             if is_90d_jumping:
