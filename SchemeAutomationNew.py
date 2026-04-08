@@ -949,13 +949,8 @@ with tab1:
                 if not all([overall_ltv, requested_tenure, monthly_opp]) or (not is_nopf and overall_pf is None):
                     continue
 
-                # df.at[idx, "SchemeMin"] = _parse_int(input_scheme_min) or df.at[idx, "SchemeMin"]
-                # df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
-                scheme_min_val = _parse_int(input_scheme_min)
-                scheme_max_val = _parse_int(input_scheme_max)
-
-                df.at[idx, "SchemeMin"] = str(scheme_min_val) if scheme_min_val is not None else None
-                df.at[idx, "SchemeMax"] = str(scheme_max_val) if scheme_max_val is not None else None
+                df.at[idx, "SchemeMin"] = _parse_int(input_scheme_min) or df.at[idx, "SchemeMin"]
+                df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
                 df.at[idx, "customerLtv"] = float(overall_ltv)
 
                 if is_90d_jumping:
@@ -973,15 +968,15 @@ with tab1:
                 # This also correctly propagates into PF and FC via the denominator.
                 secure_ltv_override_90d = Decimal("66") if (is_90d_jumping and final_tenure == 6) else None
 
-                df.at[idx, "tenure"] = final_tenure
+                df.at[idx, "tenure"] = str(final_tenure)
                 if "Tenure" in df.columns:
-                    df.at[idx, "Tenure"] = final_tenure
+                    df.at[idx, "Tenure"] = str(final_tenure)
                 # HIP: secure tenure = final_tenure from decision engine; unsecure tenure is always 24M
                 if is_hip:
                     if "bs1-tenure" in df.columns:
-                        df.at[idx, "bs1-tenure"] = final_tenure
+                        df.at[idx, "bs1-tenure"] = str(final_tenure)
                     if "bs2-tenure" in df.columns:
-                        df.at[idx, "bs2-tenure"] = 24
+                        df.at[idx, "bs2-tenure"] = str(24)
                 refname = update_refname_tenure(refname, final_tenure)
                 refname = re.sub(r'(%)(\d{1,2}M\b)', r'\1 \2', refname)
                 df.at[idx, "refName"] = refname
