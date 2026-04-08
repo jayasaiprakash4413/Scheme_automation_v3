@@ -326,7 +326,24 @@ def _pick_dummy_construct(refname, pf_tag=None, product_type=None):
 
 def build_working_dataframe(input_df):
     if not _is_restructure_input(input_df):
-        return input_df.copy()
+        # Even if no restructuring needed, normalize case-insensitive column duplicates
+        result_df = input_df.copy()
+        
+        # FIX: Handle case-insensitive column duplicates (e.g., "Tenure" vs "tenure")
+        # Merge uppercase/mixed-case columns into their lowercase equivalents
+        cols_to_drop = []
+        for col in result_df.columns:
+            col_lower = col.lower()
+            if col != col_lower and col_lower in result_df.columns:
+                # Copy values from mixed-case column to lowercase column
+                mask = pd.notna(result_df[col])
+                result_df.loc[mask, col_lower] = result_df.loc[mask, col]
+                cols_to_drop.append(col)
+        
+        if cols_to_drop:
+            result_df = result_df.drop(columns=cols_to_drop)
+        
+        return result_df
 
     rebuilt_rows = []
     for _, input_row in input_df.iterrows():
@@ -980,7 +997,7 @@ with tab1:
                 # This also correctly propagates into PF and FC via the denominator.
                 secure_ltv_override_90d = Decimal("66") if (is_90d_jumping and final_tenure == 6) else None
 
-                df.at[idx, "tenure"] = int(final_tenure)
+                df.at[idx, "tenure"] = str(final_tenure)
                 if "Tenure" in df.columns:
                     # Assign with correct dtype: if column is numeric, use int; if string, use str
                     try:
@@ -988,7 +1005,7 @@ with tab1:
                         df.at[idx, "Tenure"] = int(final_tenure)
                     except (ValueError, TypeError):
                         # Fall back to string if numeric assignment fails
-                        df.at[idx, "Tenure"] = int(final_tenure)
+                        df.at[idx, "Tenure"] = str(final_tenure)
                 # HIP: secure tenure = final_tenure from decision engine; unsecure tenure is always 24M
                 if is_hip:
                     if "bs1-tenure" in df.columns:
