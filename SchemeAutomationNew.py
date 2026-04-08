@@ -886,18 +886,33 @@ if st.button("Compute"):
             cleaned_input_df["Product Type"] = "HIP"
 
         df = build_working_dataframe(cleaned_input_df)
-numeric_cols = [
-            "SchemeMin", "SchemeMax",
-            "tenure", "Tenure",
-            "bs1-tenure", "bs2-tenure"
-            ]
+        # numeric_cols = [
+        #     "SchemeMin", "SchemeMax",
+        #     "tenure", "Tenure",
+        #     "bs1-tenure", "bs2-tenure"
+        #     ]
 
-for col in numeric_cols:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-        for checker_column in CHECKER_COLUMNS:
-            if checker_column not in df.columns:
-                df[checker_column] = ""
+# for col in numeric_cols:
+#     if col in df.columns:
+#         df[col] = pd.to_numeric(df[col], errors="coerce")
+#         for checker_column in CHECKER_COLUMNS:
+#             if checker_column not in df.columns:
+#                 df[checker_column] = ""
+        # ✅ FIX: Convert numeric columns (avoid PyArrow errors)
+        numeric_cols = [
+    "SchemeMin", "SchemeMax",
+    "tenure", "Tenure",
+    "bs1-tenure", "bs2-tenure"
+]
+
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+# ✅ Ensure checker columns exist
+for checker_column in CHECKER_COLUMNS:
+    if checker_column not in df.columns:
+        df[checker_column] = ""
 
         for idx in df.index:
 
@@ -955,8 +970,8 @@ for col in numeric_cols:
 
             # df.at[idx, "SchemeMin"] = _parse_int(input_scheme_min) or df.at[idx, "SchemeMin"]
             # df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
-            df["SchemeMin"] = pd.to_numeric(df["SchemeMin"], errors="coerce")
-            df["SchemeMax"] = pd.to_numeric(df["SchemeMax"], errors="coerce")
+            # df["SchemeMin"] = pd.to_numeric(df["SchemeMin"], errors="coerce")
+            # df["SchemeMax"] = pd.to_numeric(df["SchemeMax"], errors="coerce")
             df.at[idx, "customerLtv"] = float(overall_ltv)
 
             if is_90d_jumping:
