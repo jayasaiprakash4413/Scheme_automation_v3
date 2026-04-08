@@ -335,9 +335,19 @@ def build_working_dataframe(input_df):
         product_type_value = _get_row_value(input_row, ["Product Type", "product_type", "productType"])
         template_row = _pick_dummy_construct(refname_value, pf_tag_value, product_type_value)
 
+        # FIX: Merge input columns properly, handling case-insensitive key collisions
+        # If template has "tenure" (lowercase) and input has "Tenure" (uppercase),
+        # update the lowercase key instead of creating a duplicate
         for column, value in input_row.items():
             if pd.notna(value):
-                template_row[column] = value
+                col_lower = column.lower()
+                # Check if lowercase version exists in template_row
+                if col_lower in template_row and col_lower != column:
+                    # Update the lowercase key with input value
+                    template_row[col_lower] = value
+                else:
+                    # Add as-is (either no lowercase version exists, or it's already lowercase)
+                    template_row[column] = value
 
         if "refName" in template_row:
             template_row["refName"] = str(template_row["refName"]).strip()
@@ -972,13 +982,25 @@ with tab1:
 
                 df.at[idx, "tenure"] = str(final_tenure)
                 if "Tenure" in df.columns:
-                    df.at[idx, "Tenure"] = str(final_tenure)
+                    # Assign with correct dtype: if column is numeric, use int; if string, use str
+                    try:
+                        # Try assigning as integer if column is numeric
+                        df.at[idx, "Tenure"] = int(final_tenure)
+                    except (ValueError, TypeError):
+                        # Fall back to string if numeric assignment fails
+                        df.at[idx, "Tenure"] = str(final_tenure)
                 # HIP: secure tenure = final_tenure from decision engine; unsecure tenure is always 24M
                 if is_hip:
                     if "bs1-tenure" in df.columns:
-                        df.at[idx, "bs1-tenure"] = str(final_tenure)
+                        try:
+                            df.at[idx, "bs1-tenure"] = int(final_tenure)
+                        except (ValueError, TypeError):
+                            df.at[idx, "bs1-tenure"] = str(final_tenure)
                     if "bs2-tenure" in df.columns:
-                        df.at[idx, "bs2-tenure"] = str(24)
+                        try:
+                            df.at[idx, "bs2-tenure"] = int(24)
+                        except (ValueError, TypeError):
+                            df.at[idx, "bs2-tenure"] = str(24)
                 refname = update_refname_tenure(refname, final_tenure)
                 refname = re.sub(r'(%)(\d{1,2}M\b)', r'\1 \2', refname)
                 df.at[idx, "refName"] = refname
