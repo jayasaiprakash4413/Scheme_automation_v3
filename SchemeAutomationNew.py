@@ -954,8 +954,8 @@ with tab1:
                 scheme_min_val = _parse_int(input_scheme_min)
                 scheme_max_val = _parse_int(input_scheme_max)
 
-df.at[idx, "SchemeMin"] = str(scheme_min_val) if scheme_min_val is not None else None
-df.at[idx, "SchemeMax"] = str(scheme_max_val) if scheme_max_val is not None else None
+                df.at[idx, "SchemeMin"] = str(scheme_min_val) if scheme_min_val is not None else None
+                df.at[idx, "SchemeMax"] = str(scheme_max_val) if scheme_max_val is not None else None
                 df.at[idx, "customerLtv"] = float(overall_ltv)
 
                 if is_90d_jumping:
