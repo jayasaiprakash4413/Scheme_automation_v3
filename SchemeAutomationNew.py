@@ -1053,7 +1053,7 @@ with tab1:
                 )
 
                 if "bs1-ltv" in df.columns:
-                    df.at[idx, "bs1-ltv"] = float(result["secure_ltv"])
+                    df.at[idx, "bs1-ltv"] = str(result["secure_ltv"])
 
                 tenure_days = get_tenure_days(final_tenure)
 
