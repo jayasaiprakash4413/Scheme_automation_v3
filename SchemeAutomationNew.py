@@ -980,7 +980,7 @@ with tab1:
                 # This also correctly propagates into PF and FC via the denominator.
                 secure_ltv_override_90d = Decimal("66") if (is_90d_jumping and final_tenure == 6) else None
 
-                df.at[idx, "tenure"] = str(final_tenure)
+                df.at[idx, "tenure"] = int(final_tenure)
                 if "Tenure" in df.columns:
                     # Assign with correct dtype: if column is numeric, use int; if string, use str
                     try:
@@ -988,7 +988,7 @@ with tab1:
                         df.at[idx, "Tenure"] = int(final_tenure)
                     except (ValueError, TypeError):
                         # Fall back to string if numeric assignment fails
-                        df.at[idx, "Tenure"] = str(final_tenure)
+                        df.at[idx, "Tenure"] = int(final_tenure)
                 # HIP: secure tenure = final_tenure from decision engine; unsecure tenure is always 24M
                 if is_hip:
                     if "bs1-tenure" in df.columns:
