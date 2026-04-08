@@ -886,6 +886,15 @@ if st.button("Compute"):
             cleaned_input_df["Product Type"] = "HIP"
 
         df = build_working_dataframe(cleaned_input_df)
+        numeric_cols = [
+            "SchemeMin", "SchemeMax",
+            "tenure", "Tenure",
+            "bs1-tenure", "bs2-tenure"
+            ]
+
+for col in numeric_cols:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
         for checker_column in CHECKER_COLUMNS:
             if checker_column not in df.columns:
                 df[checker_column] = ""
