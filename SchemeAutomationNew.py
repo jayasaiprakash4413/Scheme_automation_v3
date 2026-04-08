@@ -11,6 +11,8 @@ getcontext().prec = 50
 st.set_page_config(layout="wide")
 st.title("Final Scheme Configuration Engine")
 
+tab1, tab2 = st.tabs(["Phase 1 — Generate", "Phase 2 — Check & Rectify"])
+
 # ============================================================
 # CONSTANTS (DO NOT TOUCH)
 # ============================================================
@@ -552,6 +554,8 @@ def decision_engine(overall_ltv, monthly_opp, requested_tenure):
     max_opp = max_opp.quantize(Decimal("0.01"), ROUND_HALF_UP)
 
     if min_opp <= monthly_opp <= max_opp:
+        if requested_tenure in (6, 7):
+            return ("Delight", 6)
         return ("Delight", requested_tenure)
 
     if requested_tenure in (6, 7):
@@ -800,441 +804,784 @@ def update_interest_json(json_str, slabs, tenure_days, slab_days=None):
 
     return json.dumps(data)
 
-# ============================================================
-# STREAMLIT FLOW
-# ============================================================
+with tab1:
+    # ============================================================
+    # STREAMLIT FLOW
+    # ============================================================
 
-st.subheader("Input Parameters")
+    st.subheader("Input Parameters")
 
-with st.expander("Demo constructs available", expanded=False):
-    c1, c2 = st.columns([1, 1])
-    c1.download_button("Download Flexi demo JSON", json.dumps(DUMMY_FLEXI_CONSTRUCT, indent=2), "Flexi_pf_demo.json", mime="application/json")
-    c2.download_button("Download Fixed demo JSON", json.dumps(DUMMY_FIXED_CONSTRUCT, indent=2), "fixed_pf_demo.json", mime="application/json")
+    with st.expander("Demo constructs available", expanded=False):
+        c1, c2 = st.columns([1, 1])
+        c1.download_button("Download Flexi demo JSON", json.dumps(DUMMY_FLEXI_CONSTRUCT, indent=2), "Flexi_pf_demo.json", mime="application/json")
+        c2.download_button("Download Fixed demo JSON", json.dumps(DUMMY_FIXED_CONSTRUCT, indent=2), "fixed_pf_demo.json", mime="application/json")
 
-# ── Top-level flow selector: Jumping (30D/90D mix) or HIP ──────────────────
-FLOW_OPTIONS = ["Jumping (30D / 90D)", "HIP"]
-if "selected_flow" not in st.session_state:
-    st.session_state.selected_flow = FLOW_OPTIONS[0]
+    # ── Top-level flow selector: Jumping (30D/90D mix) or HIP ──────────────────
+    FLOW_OPTIONS = ["Jumping (30D / 90D)", "HIP"]
+    if "selected_flow" not in st.session_state:
+        st.session_state.selected_flow = FLOW_OPTIONS[0]
 
-selected_flow = st.selectbox(
-    "Flow",
-    options=FLOW_OPTIONS,
-    index=FLOW_OPTIONS.index(st.session_state.selected_flow),
-    key="flow_selector"
-)
-st.session_state.selected_flow = selected_flow
-is_hip_flow = selected_flow == "HIP"
-
-# Jumping flow columns include "Product Type" so each row can be 30D or 90D.
-# HIP flow columns omit it — HIP is injected automatically on Compute.
-JUMPING_COLUMNS = ["customerLtv", "TS", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure", "Product Type"]
-HIP_COLUMNS     = ["customerLtv", "TS", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure"]
-
-JUMPING_DEFAULTS = pd.DataFrame([
-    {"customerLtv": 77, "TS": "6-12L", "slab1 ROI": 1.09, "PF Tag": "Nopf",  "Flow": "RWL", "PF val": "0.50%",      "Tenure": 6,  "Product Type": "30D Jumping"},
-    {"customerLtv": 77, "TS": "3-6L",  "slab1 ROI": 1.09, "PF Tag": "Flexi", "Flow": "FWD", "PF val": "0.1%-0.70%", "Tenure": 12, "Product Type": "90D Jumping"},
-], columns=JUMPING_COLUMNS)
-
-HIP_DEFAULTS = pd.DataFrame([
-    {"customerLtv": 75, "TS": "<3L", "slab1 ROI": 1.19, "PF Tag": "Flexi", "Flow": "FWD", "PF val": "0.70%-1.00%", "Tenure": 7},
-], columns=HIP_COLUMNS)
-
-# Separate session-state keys so switching flows doesn't wipe entered data
-state_key = "input_df_HIP" if is_hip_flow else "input_df_Jumping"
-if state_key not in st.session_state:
-    st.session_state[state_key] = (HIP_DEFAULTS if is_hip_flow else JUMPING_DEFAULTS).copy()
-
-if is_hip_flow:
-    st.write("Enter HIP rows below and click **Compute**.")
-    edited_input_df = st.data_editor(
-        st.session_state[state_key],
-        use_container_width=True,
-        num_rows="dynamic",
-        column_config={
-            "PF Tag": st.column_config.SelectboxColumn(options=["Flexi", "Fixed", "Nopf"]),
-            "Flow":   st.column_config.SelectboxColumn(options=["FWD", "RWL"]),
-        },
-        key="editor_HIP"
+    selected_flow = st.selectbox(
+        "Flow",
+        options=FLOW_OPTIONS,
+        index=FLOW_OPTIONS.index(st.session_state.selected_flow),
+        key="flow_selector"
     )
-else:
-    st.write("Enter Jumping rows below — set **Product Type** per row to `30D Jumping` or `90D Jumping`.")
-    edited_input_df = st.data_editor(
-        st.session_state[state_key],
-        use_container_width=True,
-        num_rows="dynamic",
-        column_config={
-            "Product Type": st.column_config.SelectboxColumn(options=["30D Jumping", "90D Jumping"]),
-            "PF Tag":       st.column_config.SelectboxColumn(options=["Flexi", "Fixed", "Nopf"]),
-            "Flow":         st.column_config.SelectboxColumn(options=["FWD", "RWL"]),
-        },
-        key="editor_Jumping"
-    )
+    st.session_state.selected_flow = selected_flow
+    is_hip_flow = selected_flow == "HIP"
 
-if st.button("Compute"):
-    if True:
+    # Jumping flow columns include "Product Type" so each row can be 30D or 90D.
+    # HIP flow columns omit it — HIP is injected automatically on Compute.
+    JUMPING_COLUMNS = ["customerLtv", "TS", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure", "Product Type"]
+    HIP_COLUMNS     = ["customerLtv", "TS", "slab1 ROI", "PF Tag", "Flow", "PF val", "Tenure"]
 
-        st.session_state[state_key] = edited_input_df.copy()
-        cleaned_input_df = _drop_empty_rows(edited_input_df)
-        if cleaned_input_df.empty:
-            st.warning("Please enter at least one input row before computing.")
-            st.stop()
+    JUMPING_DEFAULTS = pd.DataFrame([
+        {"customerLtv": 77, "TS": "6-12L", "slab1 ROI": 1.09, "PF Tag": "Nopf",  "Flow": "RWL", "PF val": "0.50%",      "Tenure": 6,  "Product Type": "30D Jumping"},
+        {"customerLtv": 77, "TS": "3-6L",  "slab1 ROI": 1.09, "PF Tag": "Flexi", "Flow": "FWD", "PF val": "0.1%-0.70%", "Tenure": 12, "Product Type": "90D Jumping"},
+    ], columns=JUMPING_COLUMNS)
 
-        cleaned_input_df = cleaned_input_df.copy()
-        # HIP flow: inject "HIP" as Product Type (column not shown in table)
-        # Jumping flow: Product Type already present per row — no injection needed
-        if is_hip_flow:
-            cleaned_input_df["Product Type"] = "HIP"
+    HIP_DEFAULTS = pd.DataFrame([
+        {"customerLtv": 75, "TS": "<3L", "slab1 ROI": 1.19, "PF Tag": "Flexi", "Flow": "FWD", "PF val": "0.70%-1.00%", "Tenure": 7},
+    ], columns=HIP_COLUMNS)
 
-        df = build_working_dataframe(cleaned_input_df)
-        # numeric_cols = [
-        #     "SchemeMin", "SchemeMax",
-        #     "tenure", "Tenure",
-        #     "bs1-tenure", "bs2-tenure"
-        #     ]
+    # Separate session-state keys so switching flows doesn't wipe entered data
+    state_key = "input_df_HIP" if is_hip_flow else "input_df_Jumping"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = (HIP_DEFAULTS if is_hip_flow else JUMPING_DEFAULTS).copy()
 
-# for col in numeric_cols:
-#     if col in df.columns:
-#         df[col] = pd.to_numeric(df[col], errors="coerce")
-#         for checker_column in CHECKER_COLUMNS:
-#             if checker_column not in df.columns:
-#                 df[checker_column] = ""
-        # ✅ FIX: Convert numeric columns (avoid PyArrow errors)
-        numeric_cols = [
-    "SchemeMin", "SchemeMax",
-    "tenure", "Tenure",
-    "bs1-tenure", "bs2-tenure"
-]
+    if is_hip_flow:
+        st.write("Enter HIP rows below and click **Compute**.")
+        edited_input_df = st.data_editor(
+            st.session_state[state_key],
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={
+                "PF Tag": st.column_config.SelectboxColumn(options=["Flexi", "Fixed", "Nopf"]),
+                "Flow":   st.column_config.SelectboxColumn(options=["FWD", "RWL"]),
+            },
+            key="editor_HIP"
+        )
+    else:
+        st.write("Enter Jumping rows below — set **Product Type** per row to `30D Jumping` or `90D Jumping`.")
+        edited_input_df = st.data_editor(
+            st.session_state[state_key],
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={
+                "Product Type": st.column_config.SelectboxColumn(options=["30D Jumping", "90D Jumping"]),
+                "PF Tag":       st.column_config.SelectboxColumn(options=["Flexi", "Fixed", "Nopf"]),
+                "Flow":         st.column_config.SelectboxColumn(options=["FWD", "RWL"]),
+            },
+            key="editor_Jumping"
+        )
 
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+    if st.button("Compute"):
+        if True:
 
-# ✅ Ensure checker columns exist
-for checker_column in CHECKER_COLUMNS:
-    if checker_column not in df.columns:
-        df[checker_column] = ""
+            st.session_state[state_key] = edited_input_df.copy()
+            cleaned_input_df = _drop_empty_rows(edited_input_df)
+            if cleaned_input_df.empty:
+                st.warning("Please enter at least one input row before computing.")
+                st.stop()
 
-        for idx in df.index:
+            cleaned_input_df = cleaned_input_df.copy()
+            # HIP flow: inject "HIP" as Product Type (column not shown in table)
+            # Jumping flow: Product Type already present per row — no injection needed
+            if is_hip_flow:
+                cleaned_input_df["Product Type"] = "HIP"
 
-            row = df.loc[idx]
-            refname = str(df.at[idx, "refName"]).strip()
+            df = build_working_dataframe(cleaned_input_df)
+            for checker_column in CHECKER_COLUMNS:
+                if checker_column not in df.columns:
+                    df[checker_column] = ""
 
-            configured_overall_ir = _extract_interest_rates(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else []
-            configured_secure_ir = _extract_interest_rates(df.at[idx, "bs1-addon-1"]) if "bs1-addon-1" in df.columns else []
-            configured_unsecure_ir = _extract_interest_rates(df.at[idx, "bs2-addon-1"]) if "bs2-addon-1" in df.columns else []
-            configured_tenure = df.at[idx, "tenure"] if "tenure" in df.columns else ""
-            configured_todayslab3 = _extract_slab3_today(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else None
-            configured_secure_ltv = df.at[idx, "bs1-ltv"] if "bs1-ltv" in df.columns else ""
-            configured_bs1_legalname = df.at[idx, "bs1-legalName"] if "bs1-legalName" in df.columns else ""
-            configured_pf_min, configured_pf_max = _extract_pf_config_values(df.at[idx, "bs2-charge-2"]) if "bs2-charge-2" in df.columns else (None, None)
-            configured_fc = _extract_charge_value(df.at[idx, "bs2-charge-3"]) if "bs2-charge-3" in df.columns else None
+            for idx in df.index:
 
-            input_ltv = _get_row_value(row, ["customerLtv", "customer_ltv", "ltv"])
-            input_ts_tag = _get_row_value(row, ["TS", "ts", "ticket_size", "ticketSize"])
-            input_scheme_min, input_scheme_max = _ts_label_to_min_max(input_ts_tag)
-            input_roi = _get_row_value(row, ["slab1 ROI", "slab1ROI", "roi", "slab1_opp"])
-            input_pf_tag = _get_row_value(row, ["PF Tag", "pf_tag", "pfTag"])
-            input_flow = _get_row_value(row, ["Flow", "flow"])
-            input_pf_val = _get_row_value(row, ["PF val", "PF Value", "pf_val", "pfValue"])
-            input_tenure = _get_row_value(row, ["Tenure", "tenure"])
-            input_product_type = _get_row_value(row, ["Product Type", "product_type", "productType"])
-            pt_lower = str(input_product_type).strip().lower() if input_product_type is not None else ""
-            is_90d_jumping = pt_lower == "90d jumping"
-            is_hip = pt_lower == "hip"
+                row = df.loc[idx]
+                refname = str(df.at[idx, "refName"]).strip()
 
-            refname = _update_refname_ltv_code(refname, input_ltv)
-            refname = _update_refname_opp(refname, input_roi)
-            refname = _update_refname_pf(refname, input_pf_tag, input_pf_val)
-            refname = _update_refname_flow(refname, input_flow)
-            refname = _update_refname_ts(refname, input_ts_tag)
+                configured_overall_ir = _extract_interest_rates(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else []
+                configured_secure_ir = _extract_interest_rates(df.at[idx, "bs1-addon-1"]) if "bs1-addon-1" in df.columns else []
+                configured_unsecure_ir = _extract_interest_rates(df.at[idx, "bs2-addon-1"]) if "bs2-addon-1" in df.columns else []
+                configured_tenure = df.at[idx, "tenure"] if "tenure" in df.columns else ""
+                configured_todayslab3 = _extract_slab3_today(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else None
+                configured_secure_ltv = df.at[idx, "bs1-ltv"] if "bs1-ltv" in df.columns else ""
+                configured_bs1_legalname = df.at[idx, "bs1-legalName"] if "bs1-legalName" in df.columns else ""
+                configured_pf_min, configured_pf_max = _extract_pf_config_values(df.at[idx, "bs2-charge-2"]) if "bs2-charge-2" in df.columns else (None, None)
+                configured_fc = _extract_charge_value(df.at[idx, "bs2-charge-3"]) if "bs2-charge-3" in df.columns else None
 
-            overall_ltv = _parse_decimal(input_ltv) or extract_ltv_from_code(refname)
-            requested_tenure = _parse_int(input_tenure) or extract_tenure(refname)
-            monthly_opp = _parse_decimal(input_roi) or extract_opp(refname)
+                input_ltv = _get_row_value(row, ["customerLtv", "customer_ltv", "ltv"])
+                input_ts_tag = _get_row_value(row, ["TS", "ts", "ticket_size", "ticketSize"])
+                input_scheme_min, input_scheme_max = _ts_label_to_min_max(input_ts_tag)
+                input_roi = _get_row_value(row, ["slab1 ROI", "slab1ROI", "roi", "slab1_opp"])
+                input_pf_tag = _get_row_value(row, ["PF Tag", "pf_tag", "pfTag"])
+                input_flow = _get_row_value(row, ["Flow", "flow"])
+                input_pf_val = _get_row_value(row, ["PF val", "PF Value", "pf_val", "pfValue"])
+                input_tenure = _get_row_value(row, ["Tenure", "tenure"])
+                input_product_type = _get_row_value(row, ["Product Type", "product_type", "productType"])
+                pt_lower = str(input_product_type).strip().lower() if input_product_type is not None else ""
+                is_90d_jumping = pt_lower == "90d jumping"
+                is_hip = pt_lower == "hip"
 
-            pf_min, pf_max = _parse_pf_value(input_pf_val)
-            if pf_min is None:
-                pf_min, pf_max = extract_pf_range(refname)
+                refname = _update_refname_ltv_code(refname, input_ltv)
+                refname = _update_refname_opp(refname, input_roi)
+                refname = _update_refname_pf(refname, input_pf_tag, input_pf_val)
+                refname = _update_refname_flow(refname, input_flow)
+                refname = _update_refname_ts(refname, input_ts_tag)
+
+                overall_ltv = _parse_decimal(input_ltv) or extract_ltv_from_code(refname)
+                requested_tenure = _parse_int(input_tenure) or extract_tenure(refname)
+                monthly_opp = _parse_decimal(input_roi) or extract_opp(refname)
+
+                pf_min, pf_max = _parse_pf_value(input_pf_val)
                 if pf_min is None:
-                    extracted_pf = extract_pf(refname)
-                    pf_min, pf_max = extracted_pf, extracted_pf
+                    pf_min, pf_max = extract_pf_range(refname)
+                    if pf_min is None:
+                        extracted_pf = extract_pf(refname)
+                        pf_min, pf_max = extracted_pf, extracted_pf
 
-            pf_tag_text = str(input_pf_tag).strip().lower() if input_pf_tag is not None else ""
-            is_nopf = pf_tag_text == "nopf"
-            if is_nopf and "bs2-charge-2" in df.columns:
-                configured_fc = _extract_charge_value(df.at[idx, "bs2-charge-2"])
-            overall_pf = None if is_nopf else (pf_max if pf_max is not None else pf_min)
+                pf_tag_text = str(input_pf_tag).strip().lower() if input_pf_tag is not None else ""
+                is_nopf = pf_tag_text == "nopf"
+                if is_nopf and "bs2-charge-2" in df.columns:
+                    configured_fc = _extract_charge_value(df.at[idx, "bs2-charge-2"])
+                overall_pf = None if is_nopf else (pf_max if pf_max is not None else pf_min)
 
-            if not all([overall_ltv, requested_tenure, monthly_opp]) or (not is_nopf and overall_pf is None):
-                continue
+                if not all([overall_ltv, requested_tenure, monthly_opp]) or (not is_nopf and overall_pf is None):
+                    continue
 
-            # df.at[idx, "SchemeMin"] = _parse_int(input_scheme_min) or df.at[idx, "SchemeMin"]
-            # df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
-            # df["SchemeMin"] = pd.to_numeric(df["SchemeMin"], errors="coerce")
-            # df["SchemeMax"] = pd.to_numeric(df["SchemeMax"], errors="coerce")
-            df.at[idx, "customerLtv"] = float(overall_ltv)
+                df.at[idx, "SchemeMin"] = _parse_int(input_scheme_min) or df.at[idx, "SchemeMin"]
+                df.at[idx, "SchemeMax"] = _parse_int(input_scheme_max) or df.at[idx, "SchemeMax"]
+                df.at[idx, "customerLtv"] = float(overall_ltv)
 
-            if is_90d_jumping:
-                # 90D jumping always uses Royal, tenure stays as requested (no decision_engine override)
-                scheme = "Royal"
-                final_tenure = requested_tenure
-            else:
-                scheme, final_tenure = decision_engine(
+                if is_90d_jumping:
+                    # 90D jumping always uses Royal, tenure stays as requested (no decision_engine override)
+                    scheme = "Royal"
+                    final_tenure = requested_tenure
+                else:
+                    scheme, final_tenure = decision_engine(
+                        overall_ltv,
+                        monthly_opp,
+                        requested_tenure
+                    )
+                # For 90D jumping 6M: Royal LTV is 66, not 67.
+                # (30D jumps 6M→7M via decision_engine so it already uses 66 naturally.)
+                # This also correctly propagates into PF and FC via the denominator.
+                secure_ltv_override_90d = Decimal("66") if (is_90d_jumping and final_tenure == 6) else None
+
+                df.at[idx, "tenure"] = final_tenure
+                if "Tenure" in df.columns:
+                    df.at[idx, "Tenure"] = final_tenure
+                # HIP: secure tenure = final_tenure from decision engine; unsecure tenure is always 24M
+                if is_hip:
+                    if "bs1-tenure" in df.columns:
+                        df.at[idx, "bs1-tenure"] = final_tenure
+                    if "bs2-tenure" in df.columns:
+                        df.at[idx, "bs2-tenure"] = 24
+                refname = update_refname_tenure(refname, final_tenure)
+                refname = re.sub(r'(%)(\d{1,2}M\b)', r'\1 \2', refname)
+                df.at[idx, "refName"] = refname
+                if "refno" in df.columns:
+                    df.at[idx, "refno"] = refname
+
+                if "description" in df.columns:
+                    flow_text = str(input_flow).strip().upper() if input_flow is not None else ""
+                    if flow_text == "RWL":
+                        df.at[idx, "description"] = "RWL"
+                    elif flow_text == "FWD":
+                        df.at[idx, "description"] = "FL TO"
+
+                if "applicableProcesses" in df.columns:
+                    flow_text = str(input_flow).strip().upper() if input_flow is not None else ""
+                    if flow_text == "RWL":
+                        df.at[idx, "applicableProcesses"] = "renewal"
+                    elif flow_text == "FWD":
+                        df.at[idx, "applicableProcesses"] = "fresh-loan,takeover-loan"
+
+                if "bs1-legalName" in df.columns:
+                    if is_90d_jumping:
+                        df.at[idx, "bs1-legalName"] = "Rupeek Ultra"
+                    else:
+                        df.at[idx, "bs1-legalName"] = f"Rupeek {scheme}"
+
+                result = interest_engine(
+                    scheme,
+                    final_tenure,
                     overall_ltv,
                     monthly_opp,
-                    requested_tenure
+                    secure_ltv_override=secure_ltv_override_90d
                 )
-            # For 90D jumping 6M: Royal LTV is 66, not 67.
-            # (30D jumps 6M→7M via decision_engine so it already uses 66 naturally.)
-            # This also correctly propagates into PF and FC via the denominator.
-            secure_ltv_override_90d = Decimal("66") if (is_90d_jumping and final_tenure == 6) else None
 
-            df.at[idx, "tenure"] = final_tenure
-            if "Tenure" in df.columns:
-                df.at[idx, "Tenure"] = final_tenure
-            # HIP: secure tenure = final_tenure from decision engine; unsecure tenure is always 24M
-            if is_hip:
-                if "bs1-tenure" in df.columns:
-                    df.at[idx, "bs1-tenure"] = final_tenure
-                if "bs2-tenure" in df.columns:
-                    df.at[idx, "bs2-tenure"] = 24
-            refname = update_refname_tenure(refname, final_tenure)
-            refname = re.sub(r'(%)(\d{1,2}M\b)', r'\1 \2', refname)
-            df.at[idx, "refName"] = refname
-            if "refno" in df.columns:
-                df.at[idx, "refno"] = refname
+                if "bs1-ltv" in df.columns:
+                    df.at[idx, "bs1-ltv"] = float(result["secure_ltv"])
 
-            if "description" in df.columns:
-                flow_text = str(input_flow).strip().upper() if input_flow is not None else ""
-                if flow_text == "RWL":
-                    df.at[idx, "description"] = "RWL"
-                elif flow_text == "FWD":
-                    df.at[idx, "description"] = "FL TO"
+                tenure_days = get_tenure_days(final_tenure)
 
-            if "applicableProcesses" in df.columns:
-                flow_text = str(input_flow).strip().upper() if input_flow is not None else ""
-                if flow_text == "RWL":
-                    df.at[idx, "applicableProcesses"] = "renewal"
-                elif flow_text == "FWD":
-                    df.at[idx, "applicableProcesses"] = "fresh-loan,takeover-loan"
+                # For 90D jumping: override slab day boundaries (0-90, 91-120, 121-tenure*30)
+                # For 30D jumping / all others: slab_days=None preserves existing behaviour
+                if is_90d_jumping:
+                    last_day = int(final_tenure) * 30
+                    slab_days_override = [(0, 90), (91, 120), (121, last_day)]
+                else:
+                    slab_days_override = None
 
-            if "bs1-legalName" in df.columns:
-                df.at[idx, "bs1-legalName"] = f"Rupeek {scheme}"
-
-            result = interest_engine(
-                scheme,
-                final_tenure,
-                overall_ltv,
-                monthly_opp,
-                secure_ltv_override=secure_ltv_override_90d
-            )
-
-            if "bs1-ltv" in df.columns:
-                df.at[idx, "bs1-ltv"] = float(result["secure_ltv"])
-
-            tenure_days = get_tenure_days(final_tenure)
-
-            # For 90D jumping: override slab day boundaries (0-90, 91-120, 121-tenure*30)
-            # For 30D jumping / all others: slab_days=None preserves existing behaviour
-            if is_90d_jumping:
-                last_day = int(final_tenure) * 30
-                slab_days_override = [(0, 90), (91, 120), (121, last_day)]
-            else:
-                slab_days_override = None
-
-            df.at[idx, "OverallInterestCalculation"] = update_interest_json(
-                df.at[idx, "OverallInterestCalculation"],
-                result["overall_slabs"],
-                tenure_days,
-                slab_days=slab_days_override
-            )
-
-            df.at[idx, "bs1-addon-1"] = update_interest_json(
-                df.at[idx, "bs1-addon-1"],
-                result["secure_slabs"],
-                tenure_days,
-                slab_days=slab_days_override
-            )
-
-            # HIP: unsecure addon last slab toDay is 24M * 30 = 720 days (fixed unsecure tenure)
-            bs2_addon1_tenure_days = 720 if is_hip else tenure_days
-            df.at[idx, "bs2-addon-1"] = update_interest_json(
-                df.at[idx, "bs2-addon-1"],
-                result["unsecure_slabs"],
-                bs2_addon1_tenure_days,
-                slab_days=slab_days_override
-            )
-
-            if "bs2-calculation" in df.columns:
-                df.at[idx, "bs2-calculation"] = update_interest_json(
-                    df.at[idx, "bs2-calculation"],
-                    result["unsecure_slabs"],
+                df.at[idx, "OverallInterestCalculation"] = update_interest_json(
+                    df.at[idx, "OverallInterestCalculation"],
+                    result["overall_slabs"],
                     tenure_days,
                     slab_days=slab_days_override
                 )
 
-            secure_ltv = result["secure_ltv"]
-            denominator = Decimal("1") - (secure_ltv / overall_ltv)
+                df.at[idx, "bs1-addon-1"] = update_interest_json(
+                    df.at[idx, "bs1-addon-1"],
+                    result["secure_slabs"],
+                    tenure_days,
+                    slab_days=slab_days_override
+                )
+
+                # HIP: unsecure addon last slab toDay is 24M * 30 = 720 days (fixed unsecure tenure)
+                bs2_addon1_tenure_days = 720 if is_hip else tenure_days
+                df.at[idx, "bs2-addon-1"] = update_interest_json(
+                    df.at[idx, "bs2-addon-1"],
+                    result["unsecure_slabs"],
+                    bs2_addon1_tenure_days,
+                    slab_days=slab_days_override
+                )
+
+                if "bs2-calculation" in df.columns:
+                    df.at[idx, "bs2-calculation"] = update_interest_json(
+                        df.at[idx, "bs2-calculation"],
+                        result["unsecure_slabs"],
+                        tenure_days,
+                        slab_days=slab_days_override
+                    )
+
+                secure_ltv = result["secure_ltv"]
+                denominator = Decimal("1") - (secure_ltv / overall_ltv)
+                if denominator == 0:
+                    continue
+
+                min_pf_input = pf_min if pf_min is not None else overall_pf
+                max_pf_input = pf_max if pf_max is not None else overall_pf
+
+                min_unsecure_pf = (min_pf_input / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP) if min_pf_input is not None else None
+                max_unsecure_pf = (max_pf_input / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP) if max_pf_input is not None else None
+
+                flow_pf_tag = str(input_pf_tag).strip().lower() if input_pf_tag is not None else ""
+                refname_lower = str(df.at[idx, "refName"]).lower()
+                is_flexi = flow_pf_tag == "flexi" or any(token in refname_lower for token in ["flexipf", "flexi pf", "flexi-pf"])
+                charge_pf_value = (max_unsecure_pf if is_flexi else min_unsecure_pf) if not is_nopf else None
+
+                # Compute applicable_processes here so it is available for both
+                # the PF charge (bs2-charge-2) and the FC charge (bs2-charge-3)
+                if "applicableProcesses" in df.columns:
+                    applicable_processes = [p.strip() for p in str(df.at[idx, "applicableProcesses"]).split(",") if p.strip()]
+                else:
+                    applicable_processes = ["fresh-loan", "takeover-loan"] if (str(input_flow).strip().upper() == "FWD") else ["renewal"] if (str(input_flow).strip().upper() == "RWL") else ["fresh-loan", "release"]
+
+                if is_nopf:
+                    if "chargeText" in df.columns:
+                        df.at[idx, "chargeText"] = "{}"
+                else:
+                    if "chargeText" in df.columns and charge_pf_value is not None:
+                        charge_text_overall_pf = max_pf_input if is_flexi else min_pf_input
+                        df.at[idx, "chargeText"] = update_charge_text(
+                            df.at[idx, "chargeText"],
+                            charge_pf_value,
+                            charge_text_overall_pf
+                        )
+
+                    if "bs2-charge-2" in df.columns and charge_pf_value is not None and min_unsecure_pf is not None and max_unsecure_pf is not None:
+                        df.at[idx, "bs2-charge-2"] = update_bs2_charge_2(
+                            df.at[idx, "bs2-charge-2"],
+                            charge_pf_value,
+                            min_unsecure_pf,
+                            max_unsecure_pf,
+                            is_flexi,
+                            applicable_processes=applicable_processes
+                        )
+
+                foreclosure_overall = Decimal("1.00")
+                foreclosure_duration = 3 if final_tenure in (6, 7, 12) else 2
+                foreclosure_unsecure = (foreclosure_overall / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP)
+
+                if is_nopf:
+                    if "bs2-charge-2" in df.columns:
+                        df.at[idx, "bs2-charge-2"] = update_foreclosure_charge(
+                            df.at[idx, "bs2-charge-2"],
+                            foreclosure_unsecure,
+                            foreclosure_duration,
+                            applicable_processes
+                        )
+                    if "bs2-charge-3" in df.columns:
+                        df.at[idx, "bs2-charge-3"] = "{}"
+                    if "bs2-NoOfCharges" in df.columns:
+                        df.at[idx, "bs2-NoOfCharges"] = 2
+                else:
+                    if "bs2-charge-3" in df.columns:
+                        df.at[idx, "bs2-charge-3"] = update_foreclosure_charge(
+                            df.at[idx, "bs2-charge-3"],
+                            foreclosure_unsecure,
+                            foreclosure_duration,
+                            applicable_processes
+                        )
+                    if "bs2-NoOfCharges" in df.columns:
+                        df.at[idx, "bs2-NoOfCharges"] = 3
+
+                if "bs2-legalName" in df.columns:
+                    if is_hip:
+                        # HIP legalname format: "Rupeek Loan f8 24M PF HIP X.XX% FC 90D"
+                        # 24M is fixed (unsecure tenure); f8 encoding is always f8 for HIP.
+                        # Replace the % value inside "PF HIP X.XX%" with foreclosure_unsecure.
+                        # Do NOT run the standard update_bs2_legal_name_pf_fc which would add a second PF.
+                        hip_ln = str(df.at[idx, "bs2-legalName"])
+                        fc_str_hip = str(((foreclosure_unsecure * 2).quantize(Decimal("1"), ROUND_HALF_UP) / 2).quantize(Decimal("0.00")))
+                        hip_ln = re.sub(
+                            r'(PF\s+HIP\s+)[0-9]+(?:\.[0-9]+)?(%)',
+                            rf'\g<1>{fc_str_hip}\g<2>',
+                            hip_ln, count=1, flags=re.IGNORECASE
+                        )
+                        # Normalise FC duration marker
+                        hip_ln = re.sub(r'\bFC(?:\s*[-:]?\s*\d+D)?\b', 'FC', hip_ln, flags=re.IGNORECASE)
+                        if int(foreclosure_duration) == 3:
+                            hip_ln = re.sub(r'\bFC\b', 'FC 90D', hip_ln, count=1, flags=re.IGNORECASE)
+                        elif int(foreclosure_duration) == 4:
+                            hip_ln = re.sub(r'\bFC\b', 'FC 120D', hip_ln, count=1, flags=re.IGNORECASE)
+                        df.at[idx, "bs2-legalName"] = re.sub(r'\s+', ' ', hip_ln).strip()
+                    else:
+                        encoding = "th7.si5" if final_tenure == 12 else "f8"
+                        updated_legal_name = update_bs2_legal_name(
+                            df.at[idx, "bs2-legalName"],
+                            final_tenure,
+                            encoding
+                        )
+                        has_pf_in_name = not is_nopf
+                        df.at[idx, "bs2-legalName"] = update_bs2_legal_name_pf_fc(
+                            updated_legal_name,
+                            foreclosure_unsecure,
+                            foreclosure_duration,
+                            has_pf_in_name
+                        )
+
+                # Re-read configured values after all updates so checker compares final configured vs calculated outputs.
+                configured_overall_ir_now = _extract_interest_rates(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else []
+                configured_secure_ir_now = _extract_interest_rates(df.at[idx, "bs1-addon-1"]) if "bs1-addon-1" in df.columns else []
+                configured_unsecure_ir_now = _extract_interest_rates(df.at[idx, "bs2-addon-1"]) if "bs2-addon-1" in df.columns else []
+                configured_tenure_now = df.at[idx, "tenure"] if "tenure" in df.columns else ""
+                configured_todayslab3_now = _extract_slab3_today(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else None
+                configured_secure_ltv_now = df.at[idx, "bs1-ltv"] if "bs1-ltv" in df.columns else ""
+                configured_bs1_legalname_now = df.at[idx, "bs1-legalName"] if "bs1-legalName" in df.columns else ""
+
+                configured_pf_min_now, configured_pf_max_now = (None, None)
+                if "bs2-charge-2" in df.columns:
+                    configured_pf_min_now, configured_pf_max_now = _extract_pf_config_values(df.at[idx, "bs2-charge-2"])
+
+                if is_nopf and "bs2-charge-2" in df.columns:
+                    configured_fc_now = _extract_charge_value(df.at[idx, "bs2-charge-2"])
+                elif "bs2-charge-3" in df.columns:
+                    configured_fc_now = _extract_charge_value(df.at[idx, "bs2-charge-3"])
+                else:
+                    configured_fc_now = None
+
+                df.at[idx, "CHK PF Config Min"] = str(configured_pf_min_now) if configured_pf_min_now is not None else ""
+                df.at[idx, "CHK PF Config Max"] = str(configured_pf_max_now) if configured_pf_max_now is not None else ""
+                df.at[idx, "CHK PF Calc Min"] = str(min_unsecure_pf) if min_unsecure_pf is not None else ""
+                df.at[idx, "CHK PF Calc Max"] = str(max_unsecure_pf) if max_unsecure_pf is not None else ""
+
+                df.at[idx, "CHK FC Config"] = str(configured_fc_now) if configured_fc_now is not None else ""
+                df.at[idx, "CHK FC Calc"] = str(foreclosure_unsecure)
+
+                df.at[idx, "CHK Overall IR Config"] = ",".join(configured_overall_ir_now)
+                df.at[idx, "CHK Overall IR Calc"] = ",".join([str(x) for x in result["overall_slabs"]])
+                df.at[idx, "CHK Secure IR Config"] = ",".join(configured_secure_ir_now)
+                df.at[idx, "CHK Secure IR Calc"] = ",".join([str(x) for x in result["secure_slabs"]])
+                df.at[idx, "CHK Unsecure IR Config"] = ",".join(configured_unsecure_ir_now)
+                df.at[idx, "CHK Unsecure IR Calc"] = ",".join([str(x) for x in result["unsecure_slabs"]])
+
+                df.at[idx, "CHK Tenure Config"] = str(configured_tenure_now)
+                df.at[idx, "CHK Tenure Calc"] = str(final_tenure)
+                df.at[idx, "CHK Slab3 ToDay Config"] = str(configured_todayslab3_now) if configured_todayslab3_now is not None else ""
+                df.at[idx, "CHK Slab3 ToDay Calc"] = str(tenure_days)
+
+                df.at[idx, "CHK Secure LTV Config"] = str(configured_secure_ltv_now)
+                df.at[idx, "CHK Secure LTV Calc"] = str(result["secure_ltv"])
+                df.at[idx, "CHK BS1 LegalName Config"] = str(configured_bs1_legalname_now)
+                df.at[idx, "CHK BS1 LegalName Calc"] = str(df.at[idx, "bs1-legalName"]) if "bs1-legalName" in df.columns else ""
+
+            df = finalize_output_columns(df)
+            st.session_state.df = df
+
+            st.success("Computation Complete")
+            st.subheader("Updated Schemes")
+            st.dataframe(df, use_container_width=True)
+
+    if "df" in st.session_state:
+        st.download_button(
+            "Download Updated CSV",
+            st.session_state.df.to_csv(index=False),
+            "updated_scheme.csv"
+        )
+
+with tab2:
+    st.subheader("Phase 2 — Checker")
+    st.write("Upload a scheme CSV to validate all computed fields against what the engine would calculate from the refname.")
+
+    uploaded_checker = st.file_uploader("Upload Scheme CSV", type=["csv"], key="checker_upload")
+
+    # Check fields: (display_label, config_col, calc_col)
+    CHECK_FIELDS = [
+        ("Overall IR",    "CHK Overall IR Config",    "CHK Overall IR Calc"),
+        ("Secure IR",     "CHK Secure IR Config",     "CHK Secure IR Calc"),
+        ("Unsecure IR",   "CHK Unsecure IR Config",   "CHK Unsecure IR Calc"),
+        ("Tenure",        "CHK Tenure Config",        "CHK Tenure Calc"),
+        ("Slab3 ToDay",   "CHK Slab3 ToDay Config",   "CHK Slab3 ToDay Calc"),
+        ("Secure LTV",    "CHK Secure LTV Config",    "CHK Secure LTV Calc"),
+        ("PF Min",        "CHK PF Config Min",        "CHK PF Calc Min"),
+        ("PF Max",        "CHK PF Config Max",        "CHK PF Calc Max"),
+        ("FC",            "CHK FC Config",            "CHK FC Calc"),
+        ("BS1 LegalName", "CHK BS1 LegalName Config", "CHK BS1 LegalName Calc"),
+    ]
+
+    def _run_checker_on_df(raw_df, product_type="30D Jumping"):
+        """Re-uses the exact Phase 1 compute engine on a full-scheme CSV.
+        Returns df with CHK columns populated."""
+        df = raw_df.copy()
+        for checker_column in CHECKER_COLUMNS:
+            if checker_column not in df.columns:
+                df[checker_column] = ""
+
+        for idx in df.index:
+            row = df.loc[idx]
+            refname = str(df.at[idx, "refName"]).strip() if "refName" in df.columns else ""
+
+            # ── Extract inputs from refname & existing columns ──────────────
+            overall_ltv    = extract_ltv_from_code(refname)
+            requested_tenure = extract_tenure(refname)
+            monthly_opp    = extract_opp(refname)
+            pf_min, pf_max = extract_pf_range(refname)
+            if pf_min is None:
+                extracted_pf = extract_pf(refname)
+                pf_min, pf_max = extracted_pf, extracted_pf
+
+            # Read customerLtv column if available (more reliable than code)
+            if "customerLtv" in df.columns:
+                ltv_col = _parse_decimal(df.at[idx, "customerLtv"])
+                if ltv_col is not None:
+                    overall_ltv = ltv_col
+
+            # Read tenure column if available
+            if "tenure" in df.columns:
+                ten_col = _parse_int(df.at[idx, "tenure"])
+                if ten_col is not None:
+                    requested_tenure = ten_col
+
+            if not all([overall_ltv, requested_tenure, monthly_opp]):
+                continue
+
+            # ── Product type is explicitly selected by the user via dropdown ──
+            refname_lower  = refname.lower()
+            is_hip_chk     = (product_type == "HIP")
+            is_90d_chk     = (product_type == "90D Jumping")
+
+            # PF tag
+            refname_nopf = not bool(re.search(r"PF\s*[-:]?\s*[0-9]", refname, re.IGNORECASE))
+            is_nopf_chk  = refname_nopf
+
+            overall_pf = None if is_nopf_chk else (pf_max if pf_max is not None else pf_min)
+
+            # ── Decision / scheme ───────────────────────────────────────────
+            if is_hip_chk or is_90d_chk:
+                scheme_chk     = "Royal"
+                final_ten_chk  = requested_tenure
+            else:
+                scheme_chk, final_ten_chk = decision_engine(overall_ltv, monthly_opp, requested_tenure)
+
+            secure_ltv_ov = Decimal("66") if ((is_hip_chk or is_90d_chk) and final_ten_chk == 6) else None
+
+            result = interest_engine(scheme_chk, final_ten_chk, overall_ltv, monthly_opp,
+                                     secure_ltv_override=secure_ltv_ov)
+
+            tenure_days_chk = get_tenure_days(final_ten_chk)
+
+            secure_ltv    = result["secure_ltv"]
+            denominator   = Decimal("1") - (secure_ltv / overall_ltv)
             if denominator == 0:
                 continue
 
-            min_pf_input = pf_min if pf_min is not None else overall_pf
-            max_pf_input = pf_max if pf_max is not None else overall_pf
+            # PF
+            min_pf_i = pf_min if pf_min is not None else overall_pf
+            max_pf_i = pf_max if pf_max is not None else overall_pf
+            min_unsecure_pf_chk = (min_pf_i / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP) if min_pf_i is not None else None
+            max_unsecure_pf_chk = (max_pf_i / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP) if max_pf_i is not None else None
 
-            min_unsecure_pf = (min_pf_input / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP) if min_pf_input is not None else None
-            max_unsecure_pf = (max_pf_input / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP) if max_pf_input is not None else None
+            # FC
+            fc_overall_chk    = Decimal("1.00")
+            fc_duration_chk   = 3 if final_ten_chk in (6, 7, 12) else 2
+            fc_unsecure_chk   = (fc_overall_chk / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP)
 
-            flow_pf_tag = str(input_pf_tag).strip().lower() if input_pf_tag is not None else ""
-            refname_lower = str(df.at[idx, "refName"]).lower()
-            is_flexi = flow_pf_tag == "flexi" or any(token in refname_lower for token in ["flexipf", "flexi pf", "flexi-pf"])
-            charge_pf_value = (max_unsecure_pf if is_flexi else min_unsecure_pf) if not is_nopf else None
-
-            # Compute applicable_processes here so it is available for both
-            # the PF charge (bs2-charge-2) and the FC charge (bs2-charge-3)
-            if "applicableProcesses" in df.columns:
-                applicable_processes = [p.strip() for p in str(df.at[idx, "applicableProcesses"]).split(",") if p.strip()]
-            else:
-                applicable_processes = ["fresh-loan", "takeover-loan"] if (str(input_flow).strip().upper() == "FWD") else ["renewal"] if (str(input_flow).strip().upper() == "RWL") else ["fresh-loan", "release"]
-
-            if is_nopf:
-                if "chargeText" in df.columns:
-                    df.at[idx, "chargeText"] = "{}"
-            else:
-                if "chargeText" in df.columns and charge_pf_value is not None:
-                    charge_text_overall_pf = max_pf_input if is_flexi else min_pf_input
-                    df.at[idx, "chargeText"] = update_charge_text(
-                        df.at[idx, "chargeText"],
-                        charge_pf_value,
-                        charge_text_overall_pf
-                    )
-
-                if "bs2-charge-2" in df.columns and charge_pf_value is not None and min_unsecure_pf is not None and max_unsecure_pf is not None:
-                    df.at[idx, "bs2-charge-2"] = update_bs2_charge_2(
-                        df.at[idx, "bs2-charge-2"],
-                        charge_pf_value,
-                        min_unsecure_pf,
-                        max_unsecure_pf,
-                        is_flexi,
-                        applicable_processes=applicable_processes
-                    )
-
-            foreclosure_overall = Decimal("1.00")
-            foreclosure_duration = 3 if final_tenure in (6, 7, 12) else 2
-            foreclosure_unsecure = (foreclosure_overall / denominator).quantize(Decimal("0.00"), ROUND_HALF_UP)
-
-            if is_nopf:
-                if "bs2-charge-2" in df.columns:
-                    df.at[idx, "bs2-charge-2"] = update_foreclosure_charge(
-                        df.at[idx, "bs2-charge-2"],
-                        foreclosure_unsecure,
-                        foreclosure_duration,
-                        applicable_processes
-                    )
-                if "bs2-charge-3" in df.columns:
-                    df.at[idx, "bs2-charge-3"] = "{}"
-                if "bs2-NoOfCharges" in df.columns:
-                    df.at[idx, "bs2-NoOfCharges"] = 2
-            else:
-                if "bs2-charge-3" in df.columns:
-                    df.at[idx, "bs2-charge-3"] = update_foreclosure_charge(
-                        df.at[idx, "bs2-charge-3"],
-                        foreclosure_unsecure,
-                        foreclosure_duration,
-                        applicable_processes
-                    )
-                if "bs2-NoOfCharges" in df.columns:
-                    df.at[idx, "bs2-NoOfCharges"] = 3
-
-            if "bs2-legalName" in df.columns:
-                if is_hip:
-                    # HIP legalname format: "Rupeek Loan f8 24M PF HIP X.XX% FC 90D"
-                    # 24M is fixed (unsecure tenure); f8 encoding is always f8 for HIP.
-                    # Replace the % value inside "PF HIP X.XX%" with foreclosure_unsecure.
-                    # Do NOT run the standard update_bs2_legal_name_pf_fc which would add a second PF.
-                    hip_ln = str(df.at[idx, "bs2-legalName"])
-                    fc_str_hip = str(((foreclosure_unsecure * 2).quantize(Decimal("1"), ROUND_HALF_UP) / 2).quantize(Decimal("0.00")))
-                    hip_ln = re.sub(
-                        r'(PF\s+HIP\s+)[0-9]+(?:\.[0-9]+)?(%)',
-                        rf'\g<1>{fc_str_hip}\g<2>',
-                        hip_ln, count=1, flags=re.IGNORECASE
-                    )
-                    # Normalise FC duration marker
-                    hip_ln = re.sub(r'\bFC(?:\s*[-:]?\s*\d+D)?\b', 'FC', hip_ln, flags=re.IGNORECASE)
-                    if int(foreclosure_duration) == 3:
-                        hip_ln = re.sub(r'\bFC\b', 'FC 90D', hip_ln, count=1, flags=re.IGNORECASE)
-                    elif int(foreclosure_duration) == 4:
-                        hip_ln = re.sub(r'\bFC\b', 'FC 120D', hip_ln, count=1, flags=re.IGNORECASE)
-                    df.at[idx, "bs2-legalName"] = re.sub(r'\s+', ' ', hip_ln).strip()
-                else:
-                    encoding = "th7.si5" if final_tenure == 12 else "f8"
-                    updated_legal_name = update_bs2_legal_name(
-                        df.at[idx, "bs2-legalName"],
-                        final_tenure,
-                        encoding
-                    )
-                    has_pf_in_name = not is_nopf
-                    df.at[idx, "bs2-legalName"] = update_bs2_legal_name_pf_fc(
-                        updated_legal_name,
-                        foreclosure_unsecure,
-                        foreclosure_duration,
-                        has_pf_in_name
-                    )
-
-            # Re-read configured values after all updates so checker compares final configured vs calculated outputs.
-            configured_overall_ir_now = _extract_interest_rates(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else []
-            configured_secure_ir_now = _extract_interest_rates(df.at[idx, "bs1-addon-1"]) if "bs1-addon-1" in df.columns else []
-            configured_unsecure_ir_now = _extract_interest_rates(df.at[idx, "bs2-addon-1"]) if "bs2-addon-1" in df.columns else []
-            configured_tenure_now = df.at[idx, "tenure"] if "tenure" in df.columns else ""
-            configured_todayslab3_now = _extract_slab3_today(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else None
-            configured_secure_ltv_now = df.at[idx, "bs1-ltv"] if "bs1-ltv" in df.columns else ""
-            configured_bs1_legalname_now = df.at[idx, "bs1-legalName"] if "bs1-legalName" in df.columns else ""
-
-            configured_pf_min_now, configured_pf_max_now = (None, None)
-            if "bs2-charge-2" in df.columns:
-                configured_pf_min_now, configured_pf_max_now = _extract_pf_config_values(df.at[idx, "bs2-charge-2"])
-
-            if is_nopf and "bs2-charge-2" in df.columns:
-                configured_fc_now = _extract_charge_value(df.at[idx, "bs2-charge-2"])
+            # ── Read configured values from the uploaded CSV ─────────────────
+            cfg_overall_ir  = _extract_interest_rates(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else []
+            cfg_secure_ir   = _extract_interest_rates(df.at[idx, "bs1-addon-1"]) if "bs1-addon-1" in df.columns else []
+            cfg_unsec_ir    = _extract_interest_rates(df.at[idx, "bs2-addon-1"]) if "bs2-addon-1" in df.columns else []
+            cfg_tenure      = df.at[idx, "tenure"] if "tenure" in df.columns else ""
+            cfg_slab3today  = _extract_slab3_today(df.at[idx, "OverallInterestCalculation"]) if "OverallInterestCalculation" in df.columns else None
+            cfg_secure_ltv  = df.at[idx, "bs1-ltv"] if "bs1-ltv" in df.columns else ""
+            cfg_bs1_ln      = df.at[idx, "bs1-legalName"] if "bs1-legalName" in df.columns else ""
+            cfg_pf_min_v, cfg_pf_max_v = _extract_pf_config_values(df.at[idx, "bs2-charge-2"]) if "bs2-charge-2" in df.columns else (None, None)
+            if is_nopf_chk and "bs2-charge-2" in df.columns:
+                cfg_fc_v = _extract_charge_value(df.at[idx, "bs2-charge-2"])
             elif "bs2-charge-3" in df.columns:
-                configured_fc_now = _extract_charge_value(df.at[idx, "bs2-charge-3"])
+                cfg_fc_v = _extract_charge_value(df.at[idx, "bs2-charge-3"])
             else:
-                configured_fc_now = None
+                cfg_fc_v = None
 
-            df.at[idx, "CHK PF Config Min"] = str(configured_pf_min_now) if configured_pf_min_now is not None else ""
-            df.at[idx, "CHK PF Config Max"] = str(configured_pf_max_now) if configured_pf_max_now is not None else ""
-            df.at[idx, "CHK PF Calc Min"] = str(min_unsecure_pf) if min_unsecure_pf is not None else ""
-            df.at[idx, "CHK PF Calc Max"] = str(max_unsecure_pf) if max_unsecure_pf is not None else ""
+            # ── Write CHK columns ────────────────────────────────────────────
+            df.at[idx, "CHK Overall IR Config"]    = ",".join(cfg_overall_ir)
+            df.at[idx, "CHK Overall IR Calc"]      = ",".join([str(x) for x in result["overall_slabs"]])
+            df.at[idx, "CHK Secure IR Config"]     = ",".join(cfg_secure_ir)
+            df.at[idx, "CHK Secure IR Calc"]       = ",".join([str(x) for x in result["secure_slabs"]])
+            df.at[idx, "CHK Unsecure IR Config"]   = ",".join(cfg_unsec_ir)
+            df.at[idx, "CHK Unsecure IR Calc"]     = ",".join([str(x) for x in result["unsecure_slabs"]])
+            df.at[idx, "CHK Tenure Config"]        = str(cfg_tenure)
+            df.at[idx, "CHK Tenure Calc"]          = str(final_ten_chk)
+            df.at[idx, "CHK Slab3 ToDay Config"]   = str(cfg_slab3today) if cfg_slab3today is not None else ""
+            df.at[idx, "CHK Slab3 ToDay Calc"]     = str(tenure_days_chk)
+            df.at[idx, "CHK Secure LTV Config"]    = str(cfg_secure_ltv)
+            df.at[idx, "CHK Secure LTV Calc"]      = str(result["secure_ltv"])
+            df.at[idx, "CHK BS1 LegalName Config"] = str(cfg_bs1_ln)
+            df.at[idx, "CHK BS1 LegalName Calc"]   = "Rupeek Ultra" if is_90d_chk else f"Rupeek {scheme_chk}"
+            df.at[idx, "CHK PF Config Min"]        = str(cfg_pf_min_v) if cfg_pf_min_v is not None else ""
+            df.at[idx, "CHK PF Calc Min"]          = str(min_unsecure_pf_chk) if min_unsecure_pf_chk is not None else ""
+            df.at[idx, "CHK PF Config Max"]        = str(cfg_pf_max_v) if cfg_pf_max_v is not None else ""
+            df.at[idx, "CHK PF Calc Max"]          = str(max_unsecure_pf_chk) if max_unsecure_pf_chk is not None else ""
+            df.at[idx, "CHK FC Config"]            = str(cfg_fc_v) if cfg_fc_v is not None else ""
+            df.at[idx, "CHK FC Calc"]              = str(fc_unsecure_chk)
 
-            df.at[idx, "CHK FC Config"] = str(configured_fc_now) if configured_fc_now is not None else ""
-            df.at[idx, "CHK FC Calc"] = str(foreclosure_unsecure)
+        return df
 
-            df.at[idx, "CHK Overall IR Config"] = ",".join(configured_overall_ir_now)
-            df.at[idx, "CHK Overall IR Calc"] = ",".join([str(x) for x in result["overall_slabs"]])
-            df.at[idx, "CHK Secure IR Config"] = ",".join(configured_secure_ir_now)
-            df.at[idx, "CHK Secure IR Calc"] = ",".join([str(x) for x in result["secure_slabs"]])
-            df.at[idx, "CHK Unsecure IR Config"] = ",".join(configured_unsecure_ir_now)
-            df.at[idx, "CHK Unsecure IR Calc"] = ",".join([str(x) for x in result["unsecure_slabs"]])
+    def _normalize_decimal_list(val):
+        """Normalize a comma-separated decimal string to 2dp for comparison."""
+        parts = [p.strip() for p in val.split(',') if p.strip()]
+        out = []
+        for p in parts:
+            try:
+                out.append(str(Decimal(p).quantize(Decimal("0.01"), ROUND_HALF_UP)))
+            except Exception:
+                out.append(p)
+        return ','.join(out)
 
-            df.at[idx, "CHK Tenure Config"] = str(configured_tenure_now)
-            df.at[idx, "CHK Tenure Calc"] = str(final_tenure)
-            df.at[idx, "CHK Slab3 ToDay Config"] = str(configured_todayslab3_now) if configured_todayslab3_now is not None else ""
-            df.at[idx, "CHK Slab3 ToDay Calc"] = str(tenure_days)
+    def _build_status_df(checked_df):
+        """Turn CHK columns into a human-readable PASS/FAIL table."""
+        rows = []
+        for idx in checked_df.index:
+            refname = str(checked_df.at[idx, "refName"]) if "refName" in checked_df.columns else str(idx)
+            row_result = {"refName": refname}
+            all_pass = True
+            for label, cfg_col, calc_col in CHECK_FIELDS:
+                cfg_val  = str(checked_df.at[idx, cfg_col]).strip()  if cfg_col  in checked_df.columns else ""
+                calc_val = str(checked_df.at[idx, calc_col]).strip() if calc_col in checked_df.columns else ""
+                if cfg_val == "" and calc_val == "":
+                    status = "—"
+                elif _normalize_decimal_list(cfg_val) == _normalize_decimal_list(calc_val):
+                    status = "✅ OK"
+                else:
+                    status = f"❌ Config: {cfg_val}  |  Expected: {calc_val}"
+                    all_pass = False
+                row_result[label] = status
+            row_result["Overall"] = "✅ ALL OK" if all_pass else "❌ ERRORS"
+            rows.append(row_result)
+        return pd.DataFrame(rows)
 
-            df.at[idx, "CHK Secure LTV Config"] = str(configured_secure_ltv_now)
-            df.at[idx, "CHK Secure LTV Calc"] = str(result["secure_ltv"])
-            df.at[idx, "CHK BS1 LegalName Config"] = str(configured_bs1_legalname_now)
-            df.at[idx, "CHK BS1 LegalName Calc"] = str(df.at[idx, "bs1-legalName"]) if "bs1-legalName" in df.columns else ""
+    if uploaded_checker is not None:
+        raw_checker_df = pd.read_csv(uploaded_checker)
+        st.write(f"Loaded **{len(raw_checker_df)}** scheme rows.")
 
-        df = finalize_output_columns(df)
-        st.session_state.df = df
+        product_type_chk = st.selectbox(
+            "Select Product Type",
+            ["30D Jumping", "90D Jumping", "HIP"],
+            key="product_type_chk"
+        )
 
-        st.success("Computation Complete")
-        st.subheader("Updated Schemes")
-        st.dataframe(df, use_container_width=True)
+        if st.button("Run Check", key="run_check_btn"):
+            checked_df = _run_checker_on_df(raw_checker_df, product_type_chk)
+            st.session_state["checked_df"] = checked_df
+            status_df = _build_status_df(checked_df)
+            st.session_state["status_df"] = status_df
 
-if "df" in st.session_state:
-    st.download_button(
-        "Download Updated CSV",
-        st.session_state.df.to_csv(index=False),
-        "updated_scheme.csv"
-    )
+    if "status_df" in st.session_state:
+        status_df = st.session_state["status_df"]
+        checked_df = st.session_state["checked_df"]
+
+        # Summary banner
+        total   = len(status_df)
+        errors  = int((status_df["Overall"] != "✅ ALL OK").sum())
+        st.markdown(f"### Results: {total - errors} / {total} schemes OK &nbsp;&nbsp; {'🟢' if errors == 0 else '🔴'} {errors} with errors")
+
+        # Colour the Overall column
+        def _highlight_overall(val):
+            if "ALL OK" in str(val):
+                return "background-color: #d4edda; color: #155724; font-weight: bold"
+            elif "ERRORS" in str(val):
+                return "background-color: #f8d7da; color: #721c24; font-weight: bold"
+            return ""
+
+        def _highlight_cell(val):
+            v = str(val)
+            if v.startswith("✅"):
+                return "background-color: #d4edda"
+            elif v.startswith("❌"):
+                return "background-color: #f8d7da"
+            return ""
+
+        styled = status_df.style.applymap(_highlight_cell).applymap(_highlight_overall, subset=["Overall"])
+        st.dataframe(styled, use_container_width=True)
+
+        # Download check report
+        st.download_button(
+            "Download Check Report CSV",
+            status_df.to_csv(index=False),
+            "check_report.csv",
+            key="dl_check_report"
+        )
+
+        # Rectify button — re-runs Phase 1 engine on the uploaded schemes and outputs corrected CSV
+        if errors > 0:
+            st.markdown("---")
+            st.write(f"**{errors} scheme(s) have errors.** Click below to auto-rectify them.")
+            if st.button("Rectify Errors", key="rectify_btn"):
+                rectified_df = checked_df.copy()
+                # Re-apply all Phase 1 updates (interest, PF, FC, legalName, etc.)
+                # by running the same engine that Phase 1 uses
+                for idx in rectified_df.index:
+                    row = rectified_df.loc[idx]
+                    refname = str(rectified_df.at[idx, "refName"]).strip() if "refName" in rectified_df.columns else ""
+
+                    overall_ltv    = extract_ltv_from_code(refname)
+                    requested_tenure = extract_tenure(refname)
+                    monthly_opp    = extract_opp(refname)
+                    pf_min, pf_max = extract_pf_range(refname)
+                    if pf_min is None:
+                        ep = extract_pf(refname)
+                        pf_min, pf_max = ep, ep
+
+                    if "customerLtv" in rectified_df.columns:
+                        ltv_col = _parse_decimal(rectified_df.at[idx, "customerLtv"])
+                        if ltv_col is not None:
+                            overall_ltv = ltv_col
+                    if "tenure" in rectified_df.columns:
+                        ten_col = _parse_int(rectified_df.at[idx, "tenure"])
+                        if ten_col is not None:
+                            requested_tenure = ten_col
+
+                    if not all([overall_ltv, requested_tenure, monthly_opp]):
+                        continue
+
+                    refname_lower = refname.lower()
+                    is_hip_r  = "hip" in refname_lower
+                    is_90d_r  = False
+                    if "OverallInterestCalculation" in rectified_df.columns:
+                        s3t = _extract_slab3_today(rectified_df.at[idx, "OverallInterestCalculation"])
+                        if s3t is not None:
+                            try:
+                                if int(s3t) > 60 and not is_hip_r:
+                                    is_90d_r = True
+                            except Exception:
+                                pass
+
+                    refname_nopf = not bool(re.search(r"PF\s*[-:]?\s*[0-9]", refname, re.IGNORECASE))
+                    is_nopf_r    = refname_nopf
+                    overall_pf   = None if is_nopf_r else (pf_max if pf_max is not None else pf_min)
+
+                    if is_hip_r or is_90d_r:
+                        scheme_r, final_ten_r = "Royal", requested_tenure
+                    else:
+                        scheme_r, final_ten_r = decision_engine(overall_ltv, monthly_opp, requested_tenure)
+
+                    secure_ltv_ov_r = Decimal("66") if ((is_hip_r or is_90d_r) and final_ten_r == 6) else None
+                    result_r = interest_engine(scheme_r, final_ten_r, overall_ltv, monthly_opp,
+                                               secure_ltv_override=secure_ltv_ov_r)
+
+                    tenure_days_r = get_tenure_days(final_ten_r)
+                    secure_ltv_r  = result_r["secure_ltv"]
+                    denom_r = Decimal("1") - (secure_ltv_r / overall_ltv)
+                    if denom_r == 0:
+                        continue
+
+                    # Determine slab_days for 90D
+                    slab_days_r = [(0, 90), (91, 120), (121, int(final_ten_r) * 30)] if is_90d_r else None
+
+                    if "bs1-ltv" in rectified_df.columns:
+                        rectified_df.at[idx, "bs1-ltv"] = float(result_r["secure_ltv"])
+                    if "bs1-legalName" in rectified_df.columns:
+                        if is_90d_r:
+                            rectified_df.at[idx, "bs1-legalName"] = "Rupeek Ultra"
+                        else:
+                            rectified_df.at[idx, "bs1-legalName"] = f"Rupeek {scheme_r}"
+
+                    for col, slabs in [
+                        ("OverallInterestCalculation", result_r["overall_slabs"]),
+                        ("bs1-addon-1",                result_r["secure_slabs"]),
+                    ]:
+                        if col in rectified_df.columns:
+                            rectified_df.at[idx, col] = update_interest_json(
+                                rectified_df.at[idx, col], slabs, tenure_days_r, slab_days=slab_days_r)
+
+                    bs2_addon_days_r = 720 if is_hip_r else tenure_days_r
+                    if "bs2-addon-1" in rectified_df.columns:
+                        rectified_df.at[idx, "bs2-addon-1"] = update_interest_json(
+                            rectified_df.at[idx, "bs2-addon-1"], result_r["unsecure_slabs"],
+                            bs2_addon_days_r, slab_days=slab_days_r)
+                    if "bs2-calculation" in rectified_df.columns:
+                        rectified_df.at[idx, "bs2-calculation"] = update_interest_json(
+                            rectified_df.at[idx, "bs2-calculation"], result_r["unsecure_slabs"],
+                            tenure_days_r, slab_days=slab_days_r)
+
+                    # PF & FC
+                    is_flexi_r  = any(t in refname_lower for t in ["flexipf", "flexi pf", "flexi-pf"])
+                    flow_text_r = "RWL" if "renewal" in str(rectified_df.at[idx, "applicableProcesses"] if "applicableProcesses" in rectified_df.columns else "").lower() else "FWD"
+                    applicable_r = ["renewal"] if flow_text_r == "RWL" else ["fresh-loan", "takeover-loan"]
+
+                    min_pf_i_r = pf_min if pf_min is not None else overall_pf
+                    max_pf_i_r = pf_max if pf_max is not None else overall_pf
+                    min_unsec_pf_r = (min_pf_i_r / denom_r).quantize(Decimal("0.00"), ROUND_HALF_UP) if min_pf_i_r is not None else None
+                    max_unsec_pf_r = (max_pf_i_r / denom_r).quantize(Decimal("0.00"), ROUND_HALF_UP) if max_pf_i_r is not None else None
+                    charge_pf_r = (max_unsec_pf_r if is_flexi_r else min_unsec_pf_r) if not is_nopf_r else None
+
+                    if not is_nopf_r and charge_pf_r is not None and min_unsec_pf_r is not None and max_unsec_pf_r is not None:
+                        if "chargeText" in rectified_df.columns:
+                            overall_pf_for_ct = max_pf_i_r if is_flexi_r else min_pf_i_r
+                            rectified_df.at[idx, "chargeText"] = update_charge_text(
+                                rectified_df.at[idx, "chargeText"], charge_pf_r, overall_pf_for_ct)
+                        if "bs2-charge-2" in rectified_df.columns:
+                            rectified_df.at[idx, "bs2-charge-2"] = update_bs2_charge_2(
+                                rectified_df.at[idx, "bs2-charge-2"], charge_pf_r,
+                                min_unsec_pf_r, max_unsec_pf_r, is_flexi_r,
+                                applicable_processes=applicable_r)
+
+                    fc_overall_r  = Decimal("1.00")
+                    fc_dur_r      = 3 if final_ten_r in (6, 7, 12) else 2
+                    fc_unsec_r    = (fc_overall_r / denom_r).quantize(Decimal("0.00"), ROUND_HALF_UP)
+
+                    if is_nopf_r:
+                        if "bs2-charge-2" in rectified_df.columns:
+                            rectified_df.at[idx, "bs2-charge-2"] = update_foreclosure_charge(
+                                rectified_df.at[idx, "bs2-charge-2"], fc_unsec_r, fc_dur_r, applicable_r)
+                    else:
+                        if "bs2-charge-3" in rectified_df.columns:
+                            rectified_df.at[idx, "bs2-charge-3"] = update_foreclosure_charge(
+                                rectified_df.at[idx, "bs2-charge-3"], fc_unsec_r, fc_dur_r, applicable_r)
+
+                # Drop CHK columns from rectified output
+                out_cols = [c for c in rectified_df.columns if not c.startswith("CHK")]
+                rectified_out = rectified_df[out_cols]
+                st.session_state["rectified_df"] = rectified_out
+                st.success("Rectification complete!")
+
+        if "rectified_df" in st.session_state:
+            st.subheader("Rectified Schemes")
+            st.dataframe(st.session_state["rectified_df"], use_container_width=True)
+            st.download_button(
+                "Download Rectified CSV",
+                st.session_state["rectified_df"].to_csv(index=False),
+                "rectified_schemes.csv",
+                key="dl_rectified"
+            )
