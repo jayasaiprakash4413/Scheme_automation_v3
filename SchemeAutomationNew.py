@@ -2131,7 +2131,7 @@ with tab4:
     
     with st.expander("⚙️ Phase 4 Settings", expanded=True):
         st.markdown("<small>Update this password when it expires (every 10 days).</small>", unsafe_allow_html=True)
-        inject_pass = st.text_input("Injection API Password", value="VEDiPv", type="password")
+        inject_pass = st.text_input("Injection API Password", value="IO2Ovq", type="password")
 
     col1, col2 = st.columns(2)
     with col1:
