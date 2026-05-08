@@ -20,7 +20,7 @@ except ImportError:
 getcontext().prec = 50
 
 st.set_page_config(layout="wide")
-st.title("Scheme Configuration Engine")
+st.title("Final Scheme Configuration Engine")
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "Phase 1 — Generate", 
@@ -33,11 +33,19 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # SECRETS, CONFIGS & CONSTANTS
 # ============================================================
 
-DB_HOST = "dw-redshift-prod.rupeek.com"
-DB_PORT = "5444"
-DB_NAME = "datalake"
-DB_USER = "shubhangini_v_in"
-DB_PASS = "tb6rgGTJoZqah9zR"
+# Safely load secrets with a friendly error if the file is missing
+try:
+    DB_HOST = st.secrets["DB_HOST"]
+    DB_PORT = st.secrets["DB_PORT"]
+    DB_NAME = st.secrets["DB_NAME"]
+    DB_USER = st.secrets["DB_USER"]
+    DB_PASS = st.secrets["DB_PASS"]
+except FileNotFoundError:
+    st.error("🚨 **Error:** The `.streamlit/secrets.toml` file is missing. Please create it to connect to the database.")
+    st.stop()
+except KeyError as e:
+    st.error(f"🚨 **Error:** Missing key {e} in your `secrets.toml` file.")
+    st.stop()
 
 SECURE_S1_DELIGHT = Decimal("9.95")
 SECURE_S2_DELIGHT = Decimal("17.00")
@@ -974,6 +982,10 @@ def build_creation_payload(row, api_template):
     return payload
 
 
+# ============================================================
+# PHASE 1: GENERATE
+# ============================================================
+
 with tab1:
     st.subheader("Input Parameters")
 
@@ -1104,9 +1116,11 @@ with tab1:
             custom_legal_name_input = str(cln_raw).strip() if cln_raw is not None and not pd.isna(cln_raw) else ""
             input_balance = _get_row_value(row, ["Is Balance Scheme", "is_balance_scheme"])
             
+            # --- BLOCK INVALID LTV + ROYAL CONFIGURATION ---
             if is_gpa and "royal" in custom_legal_name_input.lower() and custom_sec_ltv_input == Decimal("67"):
                 st.error(f"🛑 Error on Row {idx + 1}: 'Rupeek Royal' cannot have a Secure LTV of 67. Please change the Custom Sec LTV to 66 or lower, or change the Legal Name to 'Rupeek Delight'.")
                 st.stop()
+            # -----------------------------------------------
             
             input_roi = _get_row_value(row, ["slab1 ROI", "slab1ROI", "roi", "slab1_opp"])
             input_pf_tag = _get_row_value(row, ["PF Tag", "pf_tag", "pfTag"])
@@ -1119,6 +1133,7 @@ with tab1:
             is_90d_jumping = "90d" in pt_lower
             is_hip = "hip" in pt_lower
 
+            # Inject schemeFlags dynamically based on selections
             flags_dict = {"isLoanCalcSplitv2Enabled": True}
             if is_hip: flags_dict["isHIP"] = True
             if input_balance: flags_dict["renewalAtOutstanding"] = True
@@ -1351,6 +1366,7 @@ with tab1:
         df = finalize_output_columns(df)
         st.session_state.df = df
         
+        # Clear out any old checked/rectified data to prevent ghost data passing to Phase 3
         if "checked_df" in st.session_state: del st.session_state["checked_df"]
         if "rectified_df" in st.session_state: del st.session_state["rectified_df"]
             
@@ -1361,8 +1377,6 @@ with tab1:
     if "df" in st.session_state:
         st.download_button("Download Updated CSV", st.session_state.df.to_csv(index=False), "updated_scheme.csv")
 
-    st.markdown("---")
-    st.info("⏭️ Click the **Phase 2 — Check & Rectify** tab above to validate these schemes.")
 
 # ============================================================
 # PHASE 2: CHECK & RECTIFY (With API Flow)
@@ -1963,9 +1977,6 @@ WHERE enabled = 'true'
                 key="dl_rectified"
             )
 
-    st.markdown("---")
-    st.info("⏭️ Head over to the **Phase 3 — Push to Production** tab above to deploy your validated schemes.")
-
 # ============================================================
 # PHASE 3: PUSH TO PRODUCTION
 # ============================================================
@@ -2130,7 +2141,13 @@ with tab4:
     
     with st.expander("⚙️ Phase 4 Settings", expanded=True):
         st.markdown("<small>Update this password when it expires (every 10 days).</small>", unsafe_allow_html=True)
-        inject_pass = st.text_input("Injection API Password", value="IO2Ovq", type="password")
+        # Pull the default value from secrets so it isn't hardcoded in the script!
+        try:
+            default_inject_pass = st.secrets.get("INJECT_PASS", "VEDiPv")
+        except:
+            default_inject_pass = "VEDiPv"
+            
+        inject_pass = st.text_input("Injection API Password", value=default_inject_pass, type="password")
 
     col1, col2 = st.columns(2)
     with col1:
