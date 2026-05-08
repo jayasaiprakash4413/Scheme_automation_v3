@@ -2,4 +2,4 @@ streamlit
 pandas
 numpy
 pathlib
-
+psycopg2-binary
