@@ -20,7 +20,7 @@ except ImportError:
 getcontext().prec = 50
 
 st.set_page_config(layout="wide")
-st.title("Final Scheme Configuration Engine")
+st.title("Scheme Configuration Engine")
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "Phase 1 — Generate", 
