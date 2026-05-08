@@ -1675,7 +1675,6 @@ WHERE enabled = 'true'
       )
   AND lower(lm_appname) NOT LIKE '%monthly%'
   AND lower(lm_appname) NOT LIKE '%override%'
-  AND lower(lm_appname) NOT LIKE '%sps%'
   AND lower(lm_appname) NOT LIKE '%dpd%'
   AND lower(lm_appname) NOT LIKE '%rnrp%'
   AND lower(lm_appname) NOT LIKE '%part%'
